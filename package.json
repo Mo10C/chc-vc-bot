@@ -2,7 +2,7 @@
   "name": "chc-vc-bot",
   "version": "1.0.0",
   "private": true,
-  "description": "DiscordのVC滞在時間を記録して Firestore に日次集計を送るBot",
+  "description": "DiscordのVC滞在時間・感謝ワードの記録と、急上昇プレイヤーの画像投稿をするBot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -11,6 +11,9 @@
     "node": ">=18"
   },
   "dependencies": {
-    "discord.js": "^14.16.3"
+    "discord.js": "^14.16.3",
+    "@napi-rs/canvas": "^1.0.13",
+    "@expo-google-fonts/noto-sans-jp": "^0.4.4",
+    "@expo-google-fonts/space-grotesk": "^0.4.1"
   }
 }

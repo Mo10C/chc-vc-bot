@@ -5,7 +5,10 @@
    ② 感謝ワード：チャットで「ありがとう」などが何回言われたか → lboard_index/thanks_YYYY-MM
       （管理画面「感謝ワード」。数える言葉・期間もそこで決める）
 
-   このBotはメッセージを一切送りません。②のためにメッセージを「読む」だけです。
+   ③ 急上昇：毎日23:50、その日のLP集計（23:45）から「スタートからの伸び」「1日の伸び」の画像を連絡事項へ投稿
+      （文面は管理画面「メッセージ」で編集。rising-poster.js）
+
+   ②のためにメッセージを「読む」こと、③の投稿以外はメッセージを送りません。
    本文は保存しません（数えた回数だけを保存します）。
 
    ★ ②を使うには Developer Portal → Bot →「MESSAGE CONTENT INTENT」をオンにしてください。
@@ -16,6 +19,8 @@
      FIREBASE_PROJECT_ID  例 tft-leaderboard-f6897
      FIREBASE_API_KEY     config.js の apiKey と同じ
      VC_DATA_DIR          /data（Railwayで付けたVolumeのマウント先）
+     DISCORD_SCHEDULE_CHANNEL_ID  ③の投稿先（Cloudflare の Worker と同じ「連絡事項」のID）
+     SITE_URL             （任意）サイトのURL。ランクの紋章をサイト内のパスで設定しているとき用
    ============================================================= */
 "use strict";
 
@@ -25,6 +30,7 @@ try { require("dotenv").config(); } catch (e) { }
 const { Client, GatewayIntentBits } = require("discord.js");
 const { startVcTracker } = require("./vc-tracker");
 const { startThanksTracker } = require("./thanks-tracker");
+const { startRisingPoster } = require("./rising-poster");
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 if (!TOKEN) {
@@ -57,6 +63,7 @@ async function messageContentEnabled() {
   client.on("shardDisconnect", (ev, id) => console.warn("[discord] 接続が切れました shard " + id));
 
   startVcTracker(client);
+  startRisingPoster(client);   // ③ 毎日23:50 急上昇プレイヤーの画像を連絡事項へ
   if (withThanks) startThanksTracker(client);
   else console.warn("[thanks] MESSAGE CONTENT INTENT がオフなので、感謝ワードは数えません。" +
     "Developer Portal → Bot → MESSAGE CONTENT INTENT をオンにして、Railway で Restart してください（VC記録はこのまま動きます）");
