@@ -1,5 +1,5 @@
 /* =============================================================
-   promote-poster.js — ランクアップした人を、急上昇と同じ体裁の画像で投稿する
+   promote-poster.js — ランクアップした人を、1人ずつ豪華なお祝い画像で投稿する
 
    index.js から startPromotePoster(client) で起動します。
    昇格の判定は今までどおり Cloudflare の Worker が 23:45 の集計で行い、
@@ -18,7 +18,8 @@
 "use strict";
 
 const { shared } = require("./rising-poster");
-const { Canvas, enc, channelFor, fsGet, fsReady, renderCard, liveAvatars, rankLabel, buildMessage, md, wd } = shared;
+const { Canvas, enc, channelFor, fsGet, fsReady, liveAvatars, rankLabel, buildMessage, fill, md, wd,
+  setupFonts, loadImg, rankImg, rr, star, clean, fitText } = shared;
 
 const LATE_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_TPL = { head: "🎊 **ランクアップのお知らせ** 🎊", line: "{emoji} **{name}** さんが **{to}** に昇格しました！（{from} → {to}）", foot: "おめでとうございます！" };
@@ -45,7 +46,96 @@ async function fsSet(doc, pairs) {
   if (!r.ok) throw new Error("Firestore書き込み失敗 " + r.status + " " + (await r.text()).slice(0, 200));
 }
 
-/* 1回ぶん（1回の集計で上がった人たち）を投稿 */
+/* ---------------- 1人ずつの、豪華なお祝い画像（1200×675） ---------------- */
+const TIER_COLOR = { IRON: "#8A8F98", BRONZE: "#C07A43", SILVER: "#A9BCCD", GOLD: "#F2B53C", PLATINUM: "#3CC2B8",
+  EMERALD: "#25C07E", DIAMOND: "#6E8CFF", MASTER: "#B65CF0", GRANDMASTER: "#F0484A", CHALLENGER: "#FFD25A" };
+// 毎回同じ並びになる乱数（紙ふぶきの位置）
+function rng(seed) { let x = 0; for (const ch of String(seed)) x = (x * 31 + ch.charCodeAt(0)) >>> 0; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296); }
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; }
+
+async function renderRankUp(p, icons, siteUrl, day) {
+  setupFonts();
+  const W = 1200, H = 675, cv = Canvas.createCanvas(W, H), g = cv.getContext("2d");
+  const col = TIER_COLOR[p.rank.tier] || "#F2B53C", R = rng(p.id + day);
+  // 背景：深い色 → 新しいティアの色
+  const bg = g.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, "#0E1426"); bg.addColorStop(0.55, "#1A1F3D"); bg.addColorStop(1, hexA(col, 0.55));
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  // 光の筋（アイコンの後ろから放射状に）
+  const cx = 300, cy = 345;
+  g.save(); g.translate(cx, cy);
+  for (let i = 0; i < 12; i++) {          // 光の筋は控えめに（12本・うすく・アイコンのまわりだけ）
+    g.rotate(Math.PI * 2 / 12);
+    const lg = g.createLinearGradient(0, 0, 480, 0); lg.addColorStop(0, hexA(col, 0.22)); lg.addColorStop(1, hexA(col, 0));
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(480, -34); g.lineTo(480, 34); g.closePath(); g.fillStyle = lg; g.fill();
+  }
+  g.restore();
+  const glow = g.createRadialGradient(cx, cy, 60, cx, cy, 300); glow.addColorStop(0, hexA(col, 0.45)); glow.addColorStop(1, hexA(col, 0));
+  g.fillStyle = glow; g.fillRect(0, 0, W, H);
+  // 紙ふぶき
+  const CONF = ["#FFD25A", "#FF6B8A", "#5BC8FF", "#7CF29A", "#FFFFFF", col];
+  for (let i = 0; i < 28; i++) {          // 紙ふぶきは少なめ。上と下のふちだけ（文字にかからない）
+    const x = 40 + R() * (W - 80), y = R() < 0.5 ? 40 + R() * 50 : H - 90 + R() * 50, w = 6 + R() * 8, h = 3 + R() * 4;
+    g.save(); g.translate(x, y); g.rotate(R() * Math.PI); g.globalAlpha = 0.45 + R() * 0.35;
+    g.fillStyle = CONF[(R() * CONF.length) | 0]; g.fillRect(-w / 2, -h / 2, w, h); g.restore();
+  }
+  [[470, 110, 12], [1110, 120, 9], [1120, 560, 11], [90, 600, 8]].forEach(([x, y, r]) => star(g, x, y, r, "rgba(255,240,190,.75)"));
+  // 金の枠
+  g.lineWidth = 6; g.strokeStyle = "#E8C25A"; rr(g, 18, 18, W - 36, H - 36, 28); g.stroke();
+  g.lineWidth = 2; g.strokeStyle = "rgba(232,194,90,.55)"; rr(g, 32, 32, W - 64, H - 64, 20); g.stroke();
+
+  // 左：アイコン（光る輪）
+  const r = 140;
+  g.save(); g.shadowColor = col; g.shadowBlur = 50;
+  g.beginPath(); g.arc(cx, cy, r + 14, 0, Math.PI * 2);
+  const ring = g.createLinearGradient(cx - r, cy - r, cx + r, cy + r); ring.addColorStop(0, "#FFF1B8"); ring.addColorStop(0.5, "#E8B23A"); ring.addColorStop(1, col);
+  g.fillStyle = ring; g.fill(); g.restore();
+  let im = null;
+  for (const u of [p.live, p.avatar]) { if (u && (im = await loadImg(u))) break; }
+  g.save(); g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.clip();
+  if (im) g.drawImage(im, cx - r, cy - r, r * 2, r * 2);
+  else { g.fillStyle = col; g.fillRect(cx - r, cy - r, r * 2, r * 2); g.fillStyle = "#fff"; g.font = "900 130px JPB"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(clean(p.name).slice(0, 1), cx, cy + 6); }
+  g.restore();
+  // アイコンの下に新しいティアの紋章を重ねる
+  const cache = {};
+  const toIm = await rankImg(p.rank.tier, icons, siteUrl, cache);
+  if (toIm) { const ih = 110, iw = Math.min(ih * 1.6, toIm.width * ih / toIm.height); g.save(); g.shadowColor = "rgba(0,0,0,.5)"; g.shadowBlur = 16; g.drawImage(toIm, cx - iw / 2, cy + r - 40, iw, ih); g.restore(); }
+
+  // 右：文字
+  const X = 520;
+  g.textAlign = "left"; g.textBaseline = "alphabetic";
+  const tg = g.createLinearGradient(X, 90, X, 200); tg.addColorStop(0, "#FFF4C2"); tg.addColorStop(0.5, "#FFD25A"); tg.addColorStop(1, "#E59A1E");
+  g.font = "700 120px SG"; g.lineWidth = 10; g.strokeStyle = "rgba(60,30,0,.55)"; g.strokeText("RANK UP!", X, 190);
+  g.fillStyle = tg; g.fillText("RANK UP!", X, 190);
+  g.fillStyle = "#FFE7A6"; g.font = "900 34px JPB"; g.fillText("ランクアップおめでとう！", X + 6, 245);
+  // 名前
+  g.fillStyle = "#FFFFFF"; g.font = "900 64px JPB";
+  let fs = 64; while (fs > 34 && g.measureText(clean(p.name) + " さん").width > W - X - 70) { fs -= 2; g.font = "900 " + fs + "px JPB"; }
+  g.fillText(fitText(g, clean(p.name), W - X - 70 - g.measureText(" さん").width), X, 340);
+  const nw = g.measureText(fitText(g, clean(p.name), W - X - 70 - g.measureText(" さん").width)).width;
+  g.font = "900 " + Math.round(fs * 0.55) + "px JPB"; g.fillStyle = "#FFE7A6"; g.fillText(" さん", X + nw, 340);
+  // 前のティア → 新しいティア
+  const box = { x: X, y: 380, w: W - X - 60, h: 150 };
+  rr(g, box.x, box.y, box.w, box.h, 26); g.fillStyle = "rgba(255,255,255,.10)"; g.fill();
+  g.lineWidth = 2; g.strokeStyle = "rgba(255,255,255,.25)"; g.stroke();
+  const fromIm = await rankImg(p.fromTier, icons, siteUrl, cache);
+  let tx = box.x + 26;
+  if (fromIm) { const ih = 70, iw = Math.min(ih * 1.6, fromIm.width * ih / fromIm.height); g.save(); g.globalAlpha = 0.6; g.drawImage(fromIm, tx, box.y + 22, iw, ih); g.restore();
+    g.fillStyle = "rgba(255,255,255,.7)"; g.font = "700 20px SG"; g.textAlign = "center"; g.fillText(p.fromTier, tx + iw / 2, box.y + 122); g.textAlign = "left"; tx += iw + 22; }
+  g.fillStyle = "#FFD25A"; g.font = "700 56px SG"; g.fillText("→", tx, box.y + 92); tx += 76;
+  if (toIm) { const ih = 96, iw = Math.min(ih * 1.6, toIm.width * ih / toIm.height); g.drawImage(toIm, tx, box.y + 14, iw, ih); tx += iw + 18; }
+  // 新しいティア（LPは出さない。ディビジョンがあれば「PLATINUM IV」のように）
+  const tierTxt = p.rank.tier + ((p.rank.division && ["MASTER", "GRANDMASTER", "CHALLENGER"].indexOf(p.rank.tier) < 0) ? " " + p.rank.division : "");
+  let tfs = 44; g.font = "700 " + tfs + "px SG";
+  while (tfs > 26 && g.measureText(tierTxt).width > box.x + box.w - 24 - tx) { tfs -= 2; g.font = "700 " + tfs + "px SG"; }
+  g.fillStyle = "#FFFFFF"; g.fillText(tierTxt, tx, box.y + 90);
+  // 下：日付と学校名
+  g.fillStyle = "rgba(255,255,255,.75)"; g.font = "700 24px JP";
+  g.fillText(md(day) + "（" + wd(day) + "）  クラウドハッシュテイル校", X, 600);
+  return cv.encode("png");
+}
+
+/* 1回ぶん（1回の集計で上がった人たち）を投稿：1人につき1通・1枚 */
 async function postRun(client, run, withText, force) {
   const rows = (run && Array.isArray(run.rows) ? run.rows : []).filter(r => r && r.to);
   if (!rows.length) throw new Error("ランクアップした人の記録がありません");
@@ -64,17 +154,21 @@ async function postRun(client, run, withText, force) {
   });
   const live = await liveAvatars(client, list.map(x => x.id));
   list.forEach(x => { x.live = live[x.id] || ""; });
-  const at = run.at || Date.now();
-  const png = await renderCard({ title: "ランクアップ！", sub: md(day) + "（" + wd(day) + "）" + hhmm(at) + " の集計で昇格した人", list, medals: false,
-    icons, siteUrl: process.env.SITE_URL || "" });
-  const content = withText ? buildMessage(tpl, { count: sorted.length }, sorted.map(p => ({
-    emoji: emo(p.to) || EMOJI[p.to] || "🎉", fromEmoji: emo(p.from) || EMOJI[p.from] || "",
-    name: p.name, from: p.from, to: p.to, division: p.division || "", lp: p.lp | 0,
-    rankLabel: (emo(p.to) ? emo(p.to) + " " : "") + rankLabel({ tier: p.to, division: p.division, lp: p.lp })
-  }))) : "";
   const ch = await channelFor(client, !!force);   // 今すぐ投稿（テスト）は実験チャンネルへ
-  await ch.send({ content: content || undefined, files: [{ attachment: png, name: "rankup-" + day + ".png" }] });
-  return (withText ? "文字＋画像" : "画像") + "を投稿（" + list.length + "人）";
+  const siteUrl = process.env.SITE_URL || "";
+  /* 文字も Bot が出すとき（bot）：1通目に見出し、各人の画像に その人の明細、最後にしめの一言 */
+  const vars = p => ({ emoji: emo(p.to) || EMOJI[p.to] || "🎉", fromEmoji: emo(p.from) || EMOJI[p.from] || "",
+    name: p.name, from: p.from, to: p.to, division: p.division || "", lp: p.lp | 0,
+    rankLabel: (emo(p.to) ? emo(p.to) + " " : "") + rankLabel({ tier: p.to, division: p.division, lp: p.lp }) });
+  const head = withText ? fill(tpl.head, { count: sorted.length }).trim() : "";
+  const foot = withText ? fill(tpl.foot, { count: sorted.length }).trim() : "";
+  for (let i = 0; i < list.length; i++) {
+    const png = await renderRankUp(list[i], icons, siteUrl, day);
+    const line = withText ? fill(tpl.line, vars(sorted[i])).trim() : "";
+    const content = [i === 0 ? head : "", line, i === list.length - 1 ? foot : ""].filter(Boolean).join("\n\n");
+    await ch.send({ content: content || undefined, files: [{ attachment: png, name: "rankup-" + day + "-" + (i + 1) + ".png" }] });
+  }
+  return (withText ? "文字＋画像" : "画像") + "を1人ずつ投稿（" + list.length + "人）";
 }
 
 function startPromotePoster(client) {

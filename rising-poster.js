@@ -274,7 +274,10 @@ async function drawAvatar(g, url, name, cx, cy, r) {
 async function renderCard({ title, sub, list, icons, siteUrl, medals }) {
   setupFonts();
   const W = 1080, PAD = 54, ROW = 160, GAP = 22, TOP = 210;
-  const H = TOP + list.length * ROW + (list.length - 1) * GAP + PAD + 10;
+  /* ★ 横幅はいつも 1080。縦は人数に合わせてのびちぢみする（行の大きさは常に同じ） */
+  const n = Math.max(1, list.length);
+  const H = TOP + n * ROW + (n - 1) * GAP + PAD + 10;
+  const k = 1, startY = TOP;
   const cv = Canvas.createCanvas(W, H), g = cv.getContext("2d");
   // 背景（サイトの水色）＋クリーム色のカード
   g.fillStyle = "#DCEAF6"; g.fillRect(0, 0, W, H);
@@ -293,7 +296,11 @@ async function renderCard({ title, sub, list, icons, siteUrl, medals }) {
 
   const cache = {};
   for (let i = 0; i < list.length; i++) {
-    const x = list[i], y = TOP + i * (ROW + GAP), cx0 = PAD + 20, w = W - (PAD + 20) * 2;
+    g.save();
+    // 行の中身は k 倍に縮めるが、横幅はいつも画像いっぱい（w を 1/k にして、縮めたあと同じ幅になるように）
+    g.translate(PAD + 20, startY + i * (ROW + GAP) * k);
+    g.scale(k, k);
+    const x = list[i], y = 0, cx0 = 0, w = (W - (PAD + 20) * 2) / k;
     rr(g, cx0, y, w, ROW, 40); g.fillStyle = "#FFFFFF"; g.fill();
     g.lineWidth = 3; g.strokeStyle = i < 3 ? "#E6D2A0" : "#EADFC4"; g.stroke();
     medal(g, medals === false ? 9 : i, cx0 + 82, y + ROW / 2);   // medals:false … 全員キラキラ（順位なし）
@@ -324,6 +331,7 @@ async function renderCard({ title, sub, list, icons, siteUrl, medals }) {
     if (x.note) { g.textAlign = "left"; g.fillStyle = "#A08A5C"; g.font = "700 24px JP"; g.fillText(fitText(g, x.note, Math.max(60, cx0 + w - 42 - valW - 24 - tx)), tx, y + 121); }
     g.textAlign = "right"; g.fillStyle = x.valueColor || "#5E9E3A"; g.font = "700 50px SG";
     g.fillText(val, cx0 + w - 42, y + ROW / 2 + 18);
+    g.restore();
   }
   return cv.encode("png");
 }
@@ -407,4 +415,5 @@ function startRisingPoster(client) {
 
 module.exports = { startRisingPoster, ranking, renderCard, _rankLabel: rankLabel,
   // スナップショットの画像投稿（snapshot-poster.js）と共通の部品
-  shared: { Canvas, enc, channelFor, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, md, wd, MEDAL_TXT } };
+  shared: { Canvas, enc, channelFor, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, fill, md, wd, MEDAL_TXT,
+    setupFonts, loadImg, rankImg, rr, star, clean, fitText } };
