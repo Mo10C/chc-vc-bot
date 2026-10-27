@@ -197,7 +197,7 @@ async function loadImg(src, siteUrl) {
     if (!/^https?:\/\//.test(src)) {
       // サイト内の相対パス（rank/xxx.png）：同梱の紋章 → サイトのURL の順で探す
       const local = path.join(__dirname, src.replace(/^\.?\//, ""));
-      if (src.startsWith("rank/") && fs.existsSync(local)) return await Canvas.loadImage(local);
+      if (/^(rank|assets)\//.test(src) && fs.existsSync(local)) return await Canvas.loadImage(local);
       if (!siteUrl) return null;
       url = siteUrl.replace(/\/?$/, "/") + src.replace(/^\.?\//, "");
     }

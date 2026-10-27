@@ -23,6 +23,7 @@ const { Canvas, enc, channelFor, fsGet, fsReady, liveAvatars, rankLabel, buildMe
   setupFonts, loadImg, rankImg, rr, star, clean, fitText, dummyPlayers, DUMMY_NOTE } = shared;
 
 const LATE_MS = 12 * 60 * 60 * 1000;
+const MASCOT = "assets/rankup-mascot.png";   // お祝い画像の右下に入れる絵（差し替えるときはこのファイルを置きかえる）
 const DEFAULT_TPL = { head: "🎊 **ランクアップのお知らせ** 🎊", line: "{emoji} **{name}** さんが **{to}** に昇格しました！（{from} → {to}）", foot: "おめでとうございます！" };
 const EMOJI = { BRONZE: "🥉", SILVER: "🥈", GOLD: "🥇", PLATINUM: "💎", EMERALD: "💚", DIAMOND: "💠", MASTER: "👑", GRANDMASTER: "🔥", CHALLENGER: "🏆" };
 const TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"];
@@ -108,15 +109,14 @@ async function renderRankUp(p, icons, siteUrl, day) {
   const tg = g.createLinearGradient(X, 90, X, 200); tg.addColorStop(0, "#FFF4C2"); tg.addColorStop(0.5, "#FFD25A"); tg.addColorStop(1, "#E59A1E");
   g.font = "700 120px SG"; g.lineWidth = 10; g.strokeStyle = "rgba(60,30,0,.55)"; g.strokeText("RANK UP!", X, 190);
   g.fillStyle = tg; g.fillText("RANK UP!", X, 190);
-  g.fillStyle = "#FFE7A6"; g.font = "900 34px JPB"; g.fillText("ランクアップおめでとう！", X + 6, 245);
   // 名前
   g.fillStyle = "#FFFFFF"; g.font = "900 64px JPB";
   let fs = 64; while (fs > 34 && g.measureText(clean(p.name) + " さん").width > W - X - 70) { fs -= 2; g.font = "900 " + fs + "px JPB"; }
-  g.fillText(fitText(g, clean(p.name), W - X - 70 - g.measureText(" さん").width), X, 340);
+  g.fillText(fitText(g, clean(p.name), W - X - 70 - g.measureText(" さん").width), X, 300);
   const nw = g.measureText(fitText(g, clean(p.name), W - X - 70 - g.measureText(" さん").width)).width;
-  g.font = "900 " + Math.round(fs * 0.55) + "px JPB"; g.fillStyle = "#FFE7A6"; g.fillText(" さん", X + nw, 340);
+  g.font = "900 " + Math.round(fs * 0.55) + "px JPB"; g.fillStyle = "#FFE7A6"; g.fillText(" さん", X + nw, 300);
   // 前のティア → 新しいティア
-  const box = { x: X, y: 380, w: W - X - 60, h: 150 };
+  const box = { x: X, y: 330, w: W - X - 60, h: 150 };
   rr(g, box.x, box.y, box.w, box.h, 26); g.fillStyle = "rgba(255,255,255,.10)"; g.fill();
   g.lineWidth = 2; g.strokeStyle = "rgba(255,255,255,.25)"; g.stroke();
   const fromIm = await rankImg(p.fromTier, icons, siteUrl, cache);
@@ -132,7 +132,10 @@ async function renderRankUp(p, icons, siteUrl, day) {
   g.fillStyle = "#FFFFFF"; g.fillText(tierTxt, tx, box.y + 90);
   // 下：日付と学校名
   g.fillStyle = "rgba(255,255,255,.75)"; g.font = "700 24px JP";
-  g.fillText(md(day) + "（" + wd(day) + "）  クラウドハッシュテイル校", X, 600);
+  g.fillText(md(day) + "（" + wd(day) + "）  クラウドハッシュテイル校", X, 572);
+  // 右下：マスコット（chc-vc-bot/assets/rankup-mascot.png）
+  const mascot = await loadImg(MASCOT);
+  if (mascot) { const mh = 156, mw = mascot.width * mh / mascot.height; g.save(); g.shadowColor = "rgba(0,0,0,.35)"; g.shadowBlur = 14; g.drawImage(mascot, W - 48 - mw, H - 36 - mh, mw, mh); g.restore(); }
   return cv.encode("png");
 }
 
