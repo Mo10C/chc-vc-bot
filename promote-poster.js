@@ -125,8 +125,8 @@ async function renderRankUp(p, icons, siteUrl, day) {
     g.fillStyle = "rgba(255,255,255,.7)"; g.font = "700 20px SG"; g.textAlign = "center"; g.fillText(p.fromTier, tx + iw / 2, box.y + 122); g.textAlign = "left"; tx += iw + 22; }
   g.fillStyle = "#FFD25A"; g.font = "700 56px SG"; g.fillText("→", tx, box.y + 92); tx += 76;
   if (toIm) { const ih = 96, iw = Math.min(ih * 1.6, toIm.width * ih / toIm.height); g.drawImage(toIm, tx, box.y + 14, iw, ih); tx += iw + 18; }
-  // 新しいティア（LPは出さない。ディビジョンがあれば「PLATINUM IV」のように）
-  const tierTxt = p.rank.tier + ((p.rank.division && ["MASTER", "GRANDMASTER", "CHALLENGER"].indexOf(p.rank.tier) < 0) ? " " + p.rank.division : "");
+  // 新しいティアの名前だけ（LP・I〜IV は出さない）
+  const tierTxt = p.rank.tier;
   let tfs = 44; g.font = "700 " + tfs + "px SG";
   while (tfs > 26 && g.measureText(tierTxt).width > box.x + box.w - 24 - tx) { tfs -= 2; g.font = "700 " + tfs + "px SG"; }
   g.fillStyle = "#FFFFFF"; g.fillText(tierTxt, tx, box.y + 90);
