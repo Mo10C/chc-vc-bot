@@ -7,8 +7,9 @@
    この Bot はそれを見つけたら画像を作って連絡事項へ投稿します。
 
    投稿のしかた（管理コンソール →「メッセージ」の「🎊 ランクアップの画像投稿」= promote.imageMode）
-     both … Worker が文字を投稿 → 続けて Bot が画像だけを投稿（既定）
-     bot  … Worker は投稿せず、Bot が「文字＋画像」を1通で投稿
+     bot  … Worker は投稿せず、Bot が1人ずつ「お祝いの一文＋画像」を投稿（既定）
+            1通目の頭に見出し、最後の1通にしめの一言
+     both … Worker が文字をまとめて投稿 → 続けて Bot が画像だけを1人ずつ投稿
      text … 画像は投稿しない（今までどおり Worker の文字だけ）
 
    ・文面は管理コンソール →「メッセージ」の「ランクアップのお祝い」（Worker と共通）
@@ -179,7 +180,7 @@ function startPromotePoster(client) {
     try {
       const doc = await fsGet("lboard_index/promote");
       if (!doc) return;
-      const mode = ["both", "bot", "text"].indexOf(doc.imageMode) >= 0 ? doc.imageMode : "both";
+      const mode = ["both", "bot", "text"].indexOf(doc.imageMode) >= 0 ? doc.imageMode : "bot";   // 既定：文字＋画像を1人ずつ
       const runs = Object.entries(doc.runs || {}).filter(([, r]) => r && r.at).sort((a, b) => a[1].at - b[1].at);
       // 管理画面の「画像を今すぐ投稿」：いちばん新しい記録を出し直す（テスト用。一時停止は無視）
       if (doc.imgRequestAt && doc.imgRequestAt > (doc.imgHandledAt || 0)) {
