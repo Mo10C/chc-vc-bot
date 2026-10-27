@@ -284,15 +284,21 @@ async function renderCard({ title, sub, list, icons, siteUrl }) {
     g.textAlign = "left"; g.textBaseline = "alphabetic"; g.fillStyle = "#1F2F45";
     g.font = "900 40px JPB";
     g.fillText(fitText(g, clean(x.name), w - 290 - 260), nx, y + 70);
-    // ランク（紋章＋文字）
-    const im = await rankImg(x.rank.tier, icons, siteUrl, cache);
+    // 2行目：ランク（紋章＋文字）。note があればランクの右に小さく添える
     let tx = nx;
-    if (im) { const ih = 44, iw = Math.min(ih * 1.6, im.width * ih / im.height); g.drawImage(im, nx, y + 88, iw, ih); tx = nx + iw + 12; }
-    g.fillStyle = "#7A8794"; g.font = "700 28px SG";
-    g.fillText(rankLabel(x.rank), tx, y + 122);
-    // 伸び
-    g.textAlign = "right"; g.fillStyle = "#5E9E3A"; g.font = "700 50px SG";
-    g.fillText("+" + x.gain + "LP", cx0 + w - 42, y + ROW / 2 + 18);
+    if (x.rank && x.rank.tier) {
+      const im = await rankImg(x.rank.tier, icons, siteUrl, cache);
+      if (im) { const ih = 44, iw = Math.min(ih * 1.6, im.width * ih / im.height); g.drawImage(im, nx, y + 88, iw, ih); tx = nx + iw + 12; }
+      g.fillStyle = "#7A8794"; g.font = "700 28px SG";
+      g.fillText(rankLabel(x.rank), tx, y + 122);
+      tx += g.measureText(rankLabel(x.rank)).width + 16;
+    }
+    // 右：数字（既定は「+◯LP」）
+    const val = x.value || ("+" + x.gain + "LP");
+    g.font = "700 50px SG"; const valW = g.measureText(val).width;
+    if (x.note) { g.textAlign = "left"; g.fillStyle = "#A08A5C"; g.font = "700 24px JP"; g.fillText(fitText(g, x.note, Math.max(60, cx0 + w - 42 - valW - 24 - tx)), tx, y + 121); }
+    g.textAlign = "right"; g.fillStyle = x.valueColor || "#5E9E3A"; g.font = "700 50px SG";
+    g.fillText(val, cx0 + w - 42, y + ROW / 2 + 18);
   }
   return cv.encode("png");
 }
@@ -376,4 +382,6 @@ function startRisingPoster(client) {
   t.unref && t.unref();
 }
 
-module.exports = { startRisingPoster, ranking, renderCard, _rankLabel: rankLabel };
+module.exports = { startRisingPoster, ranking, renderCard, _rankLabel: rankLabel,
+  // スナップショットの画像投稿（snapshot-poster.js）と共通の部品
+  shared: { Canvas, enc, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, md, wd, MEDAL_TXT } };

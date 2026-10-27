@@ -7,8 +7,10 @@
 
    ③ 急上昇：毎日23:50、その日のLP集計（23:45）から「スタートからの伸び」「1日の伸び」の画像を連絡事項へ投稿
       （文面は管理画面「メッセージ」で編集。rising-poster.js）
+   ④ 先生スナップショット：Worker が 23:45 に出した結果と表彰を、③と同じ体裁の画像で連絡事項へ投稿
+      （画像の出し方は管理画面「先生スナップショット」で選ぶ。snapshot-poster.js）
 
-   ②のためにメッセージを「読む」こと、③の投稿以外はメッセージを送りません。
+   ②のためにメッセージを「読む」こと、③④の投稿以外はメッセージを送りません。
    本文は保存しません（数えた回数だけを保存します）。
 
    ★ ②を使うには Developer Portal → Bot →「MESSAGE CONTENT INTENT」をオンにしてください。
@@ -31,6 +33,7 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const { startVcTracker } = require("./vc-tracker");
 const { startThanksTracker } = require("./thanks-tracker");
 const { startRisingPoster } = require("./rising-poster");
+const { startSnapshotPoster } = require("./snapshot-poster");
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 if (!TOKEN) {
@@ -64,6 +67,7 @@ async function messageContentEnabled() {
 
   startVcTracker(client);
   startRisingPoster(client);   // ③ 毎日23:50 急上昇プレイヤーの画像を連絡事項へ
+  startSnapshotPoster(client); // ④ 先生スナップショットの結果・表彰を、同じ体裁の画像で連絡事項へ
   if (withThanks) startThanksTracker(client);
   else console.warn("[thanks] MESSAGE CONTENT INTENT がオフなので、感謝ワードは数えません。" +
     "Developer Portal → Bot → MESSAGE CONTENT INTENT をオンにして、Railway で Restart してください（VC記録はこのまま動きます）");
