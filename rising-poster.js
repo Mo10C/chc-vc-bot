@@ -152,6 +152,28 @@ function ranking(lp, day, kind) {
   return { list: out, base };
 }
 
+/* ---------------- ダミーデータ（記録が無くても実験できるように） ----------------
+   メンバー名簿（LPの名簿）にいる人をランダムに選んで、数字だけ作る。
+   名簿に人がいなければ、架空の名前で埋める。 */
+const DUMMY_NAMES = ["テスト太郎", "サンプル花子", "ダミー先生", "ためし次郎", "みほん三郎", "けんしょう子", "プレビュー四郎", "おためし五郎"];
+const DUMMY_TIERS = ["SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER"];
+function dummyPlayers(lp, n, seed) {
+  let x = 0; for (const ch of String(seed || Date.now())) x = (x * 31 + ch.charCodeAt(0)) >>> 0;
+  const R = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const mem = Object.entries((lp && lp.members) || {}).filter(([, m]) => m && m.name);
+  for (let i = mem.length - 1; i > 0; i--) { const j = (R() * (i + 1)) | 0; [mem[i], mem[j]] = [mem[j], mem[i]]; }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const [id, m] = mem[i] || ["dummy" + i, { name: DUMMY_NAMES[i % DUMMY_NAMES.length] }];
+    const tier = m.tier || DUMMY_TIERS[(R() * DUMMY_TIERS.length) | 0];
+    const apex = ["MASTER", "GRANDMASTER", "CHALLENGER"].indexOf(tier) >= 0;
+    out.push({ id, name: m.name, avatar: m.avatar || "", tier,
+      rank: { tier, division: apex ? "" : (m.division || DIVS[(R() * 4) | 0]), lp: m.tier ? (m.lp | 0) : (R() * (apex ? 400 : 100)) | 0 } });
+  }
+  return out;
+}
+const DUMMY_NOTE = "🧪 **テスト投稿（ダミーデータ）**　※本当の記録ではありません\n";
+
 /* ---------------- 画像 ---------------- */
 let fontsReady = false;
 function setupFonts() {
@@ -352,7 +374,9 @@ async function postDay(client, day, opts) {
     const key = kind === "total" ? "risingTotal" : "risingDaily";
     const tpl = Object.assign({}, DEFAULT_MSG[key], (msgs || {})[key] || {});
     if (!opts.force && tpl.pause && day <= tpl.pause) { sent.push(kind + ":一時停止中"); continue; }
-    const { list, base } = ranking(lp, day, kind);
+    const { list, base } = opts.dummy
+      ? { list: dummyPlayers(lp, top, day + kind).map((x, i) => Object.assign(x, { gain: (kind === "total" ? 220 : 110) - i * (kind === "total" ? 23 : 14) })), base: lp.baseline || lp.collectFrom || shiftDay(day, -2) }
+      : ranking(lp, day, kind);
     if (!list.length) { sent.push(kind + ":伸びた人なし"); continue; }
     const L = list.slice(0, top);
     const live = await liveAvatars(client, L.map(x => x.id));
@@ -365,7 +389,7 @@ async function postDay(client, day, opts) {
     const head = { md: md(day), wd: wd(day), date: day, base: base ? md(base) : "", n: L.length };
     const rows = L.slice(0, 3).map((x, i) => ({ medal: MEDAL_TXT[i], rank: i + 1, name: x.name, gain: x.gain,
       rankLabel: (tierEmoji(x.rank.tier) ? tierEmoji(x.rank.tier) + " " : "") + rankLabel(x.rank) }));
-    await ch.send({ content: buildMessage(tpl, head, rows), files: [{ attachment: png, name: "rising-" + kind + "-" + day + ".png" }] });
+    await ch.send({ content: (opts.dummy ? DUMMY_NOTE : "") + buildMessage(tpl, head, rows), files: [{ attachment: png, name: "rising-" + kind + "-" + day + ".png" }] });
     sent.push(kind + ":" + L.length + "人");
   }
   return sent;
@@ -388,8 +412,8 @@ function startRisingPoster(client) {
       if (cfg.requestAt && cfg.requestAt > (cfg.handledAt || 0)) {
         const d = /^\d{4}-\d{2}-\d{2}$/.test(cfg.requestDay || "") ? cfg.requestDay : day;
         let res, err = "";
-        try { res = await postDay(client, d, { force: true }); } catch (e) { err = e.message; }
-        const patch = { handledAt: Date.now(), lastResult: err ? "失敗：" + err : "今すぐ投稿（実験チャンネル） " + d + " → " + res.join(" / ") };
+        try { res = await postDay(client, d, { force: true, dummy: !!cfg.requestDummy }); } catch (e) { err = e.message; }
+        const patch = { handledAt: Date.now(), lastResult: err ? "失敗：" + err : (cfg.requestDummy ? "ダミーで投稿（実験チャンネル） " : "今すぐ投稿（実験チャンネル） ") + d + " → " + res.join(" / ") };
         // 今すぐ投稿は実験チャンネルへ出るので、毎日の本番投稿はそのまま行う
         await fsPatch("lboard_index/rising", patch);
         console.log("[rising] 今すぐ投稿: " + (err || res.join(" / ")));
@@ -416,4 +440,4 @@ function startRisingPoster(client) {
 module.exports = { startRisingPoster, ranking, renderCard, _rankLabel: rankLabel,
   // スナップショットの画像投稿（snapshot-poster.js）と共通の部品
   shared: { Canvas, enc, channelFor, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, fill, md, wd, MEDAL_TXT,
-    setupFonts, loadImg, rankImg, rr, star, clean, fitText } };
+    setupFonts, loadImg, rankImg, rr, star, clean, fitText, dummyPlayers, DUMMY_NOTE, shiftDay } };

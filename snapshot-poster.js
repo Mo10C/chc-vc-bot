@@ -19,7 +19,7 @@
 "use strict";
 
 const { shared } = require("./rising-poster");
-const { Canvas, enc, channelFor, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, md, wd, MEDAL_TXT } = shared;
+const { Canvas, enc, channelFor, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, md, wd, MEDAL_TXT, dummyPlayers, DUMMY_NOTE, shiftDay } = shared;
 
 const LATE_MS = 12 * 60 * 60 * 1000;
 const MARU = ["", "①", "②", "③", "④", "⑤", "⑥"];
@@ -85,7 +85,7 @@ async function postRound(client, snap, day, withText, force) {
   const content = withText ? buildMessage(tpl, { label, maru, round, md: md(day), date: day, time: hhmm(at), hhmm: hhmm(at) },
     rows.map(x => ({ medal: MEDAL_TXT[(x.rank | 0) - 1] || "✨", rank: x.rank, name: x.name,
       rankLabel: (c.emo(x.tier) ? c.emo(x.tier) + " " : "") + rankLabel({ tier: x.tier, division: x.division, lp: x.lp }), point: x.point }))) : "";
-  await c.ch.send({ content: content || undefined, files: [{ attachment: png, name: "snapshot-" + day + ".png" }] });
+  await c.ch.send({ content: ((snap.dummy ? DUMMY_NOTE : "") + content) || undefined, files: [{ attachment: png, name: "snapshot-" + day + ".png" }] });
   return (withText ? "文字＋画像" : "画像") + "を投稿（" + list.length + "人）";
 }
 
@@ -112,8 +112,23 @@ async function postFinal(client, snap, withText, force) {
   const at = snap.finalAt || Date.now();
   const content = withText ? buildMessage(tpl, { title, label, rounds: dates.length, n: chosen.length, md: day ? md(day) : "", date: day, time: hhmm(at) },
     chosen.map((t, i) => ({ medal: MEDAL_TXT[i] || "✨", rank: i + 1, name: t.name, total: t.total | 0, detail: detailOf(t) ? "（" + detailOf(t) + "）" : "" }))) : "";
-  await c.ch.send({ content: content || undefined, files: [{ attachment: png, name: "snapshot-final.png" }] });
+  await c.ch.send({ content: ((snap.dummy ? DUMMY_NOTE : "") + content) || undefined, files: [{ attachment: png, name: "snapshot-final.png" }] });
   return "表彰の" + (withText ? "文字＋画像" : "画像") + "を投稿（" + list.length + "人）";
+}
+
+/* ダミーの結果（記録が無くても実験できるように）：名簿からランダムに選んで、2回分の結果と表彰を作る */
+async function dummySnap(snap) {
+  const lp = await fsGet("lboard_index/lp");
+  const n = Math.max(1, Math.min(8, (snap.topN | 0) || 4)), pts = (Array.isArray(snap.points) && snap.points.length ? snap.points : [4, 3, 2, 1]).map(x => x | 0);
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10), d1 = shiftDay(today, -7);
+  const ppl = dummyPlayers(lp, n + 1, "snap" + Date.now());
+  const row = (x, i) => ({ id: x.id, name: x.name, tier: x.rank.tier, division: x.rank.division, lp: x.rank.lp, abs: 0, rank: i + 1, point: pts[i] != null ? pts[i] : 0 });
+  const r1 = ppl.slice(0, n).map(row), r2 = ppl.slice(1, n + 1).map(row);
+  const tally = {};
+  [[d1, r1], [today, r2]].forEach(([d, rows]) => rows.forEach(r => { const t = tally[r.id] || (tally[r.id] = { id: r.id, name: r.name, total: 0, per: {} }); t.total += r.point; t.per[d] = r.point; }));
+  return { dummy: true, label: snap.label || "先生スナップショット", finalTitle: snap.finalTitle || "代表先生", dates: [d1, today],
+    results: { [d1]: { at: Date.now(), rows: r1 }, [today]: { at: Date.now(), rows: r2 } },
+    final: Object.values(tally).sort((a, b) => b.total - a.total).slice(0, Math.max(1, (snap.finalN | 0) || 4)), finalAt: Date.now() };
 }
 
 function startSnapshotPoster(client) {
@@ -130,10 +145,13 @@ function startSnapshotPoster(client) {
       if (snap.imgRequestAt && snap.imgRequestAt > (snap.imgHandledAt || 0)) {
         let res;
         try {
-          res = snap.imgRequestFinal ? await postFinal(client, snap, mode === "bot", true)
-                                     : await postRound(client, snap, String(snap.imgRequestDay || ""), mode === "bot", true);
+          const target = snap.imgRequestDummy ? await dummySnap(snap) : snap;
+          const d = snap.imgRequestDummy ? target.dates[target.dates.length - 1] : String(snap.imgRequestDay || "");
+          res = snap.imgRequestFinal ? await postFinal(client, target, snap.imgRequestDummy || mode === "bot", true)
+                                     : await postRound(client, target, d, snap.imgRequestDummy || mode === "bot", true);
         } catch (e) { res = "失敗：" + e.message; }
-        await fsSet("lboard_index/snapshot", [[["imgHandledAt"], Date.now()], [["imgLastResult"], (snap.imgRequestFinal ? "表彰" : String(snap.imgRequestDay || "")) + " → " + res]]);
+        await fsSet("lboard_index/snapshot", [[["imgHandledAt"], Date.now()],
+          [["imgLastResult"], (snap.imgRequestDummy ? "ダミー" : "") + (snap.imgRequestFinal ? "表彰" : String(snap.imgRequestDay || "")) + " → " + res]]);
         console.log("[snapshot] 今すぐ投稿: " + res);
       }
       if (mode === "text") return;

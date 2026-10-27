@@ -20,7 +20,7 @@
 
 const { shared } = require("./rising-poster");
 const { Canvas, enc, channelFor, fsGet, fsReady, liveAvatars, rankLabel, buildMessage, fill, md, wd,
-  setupFonts, loadImg, rankImg, rr, star, clean, fitText } = shared;
+  setupFonts, loadImg, rankImg, rr, star, clean, fitText, dummyPlayers, DUMMY_NOTE } = shared;
 
 const LATE_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_TPL = { head: "🎊 **ランクアップのお知らせ** 🎊", line: "{emoji} **{name}** さんが **{to}** に昇格しました！（{from} → {to}）", foot: "おめでとうございます！" };
@@ -166,7 +166,8 @@ async function postRun(client, run, withText, force) {
   for (let i = 0; i < list.length; i++) {
     const png = await renderRankUp(list[i], icons, siteUrl, day);
     const line = withText ? fill(tpl.line, vars(sorted[i])).trim() : "";
-    const content = [i === 0 ? head : "", line, i === list.length - 1 ? foot : ""].filter(Boolean).join("\n\n");
+    let content = [i === 0 ? head : "", line, i === list.length - 1 ? foot : ""].filter(Boolean).join("\n\n");
+    if (run.dummy && i === 0) content = DUMMY_NOTE + content;
     await ch.send({ content: content || undefined, files: [{ attachment: png, name: "rankup-" + day + "-" + (i + 1) + ".png" }] });
   }
   return (withText ? "文字＋画像" : "画像") + "を1人ずつ投稿（" + list.length + "人）";
@@ -186,9 +187,19 @@ function startPromotePoster(client) {
       if (doc.imgRequestAt && doc.imgRequestAt > (doc.imgHandledAt || 0)) {
         let res;
         const last = runs[runs.length - 1];
-        try { res = last ? await postRun(client, last[1], mode === "bot", true) : "まだランクアップの記録がありません"; }
+        try {
+          if (doc.imgRequestDummy) {
+            // ダミー：名簿からランダムに2人。1つ下のティアから上がったことにする
+            const lp = await fsGet("lboard_index/lp");
+            const rows = dummyPlayers(lp, 2, "promote" + Date.now()).map(x => {
+              const ti = Math.max(1, TIERS.indexOf(x.rank.tier));
+              return { id: x.id, name: x.name, from: TIERS[ti - 1], to: TIERS[ti], division: x.rank.division, lp: x.rank.lp };
+            });
+            res = await postRun(client, { at: Date.now(), day: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10), rows, dummy: true }, true, true);   // ダミーは文面も付けて見た目を確認できるように
+          } else res = last ? await postRun(client, last[1], mode === "bot", true) : "まだランクアップの記録がありません（「ダミーデータで投稿」なら試せます）";
+        }
         catch (e) { res = "失敗：" + e.message; }
-        await fsSet("lboard_index/promote", [[["imgHandledAt"], Date.now()], [["imgLastResult"], "今すぐ投稿（実験チャンネル） → " + res]]);
+        await fsSet("lboard_index/promote", [[["imgHandledAt"], Date.now()], [["imgLastResult"], (doc.imgRequestDummy ? "ダミーで投稿（実験チャンネル） → " : "今すぐ投稿（実験チャンネル） → ") + res]]);
         console.log("[promote] 今すぐ投稿: " + res);
       }
       if (mode === "text") return;
