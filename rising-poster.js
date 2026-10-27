@@ -16,6 +16,7 @@
 
    環境変数（Railway の Variables）
      DISCORD_SCHEDULE_CHANNEL_ID  投稿先（Cloudflare の Worker と同じ「連絡事項」のID）★必須
+                                  ※「今すぐ投稿」は実験チャンネル（管理画面「メッセージ」で設定）へ
      SITE_URL                     サイトのURL（例 https://xxx.github.io/chc-lboard/）。
                                   ランクの紋章を「rank/…png」のようにサイト内のパスで設定している
                                   ときに使います（無ければ Bot に同梱の紋章を使います）
@@ -90,6 +91,24 @@ async function fsPatch(doc, obj) {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields })
   });
   if (!r.ok) throw new Error("Firestore書き込み失敗 " + r.status + " " + (await r.text()).slice(0, 200));
+}
+
+/* ---------------- 投稿先 ----------------
+   本番：連絡事項（DISCORD_SCHEDULE_CHANNEL_ID）
+   実験：管理画面「メッセージ」→「🧪 実験チャンネル」で決めたチャンネル（lboard_index/botcfg.testChannelId）
+     ・「今すぐ投稿」（テスト）はいつも実験チャンネルへ
+     ・「本番の自動投稿も実験チャンネルへ」（testAll）をオンにすると、毎日の自動投稿も実験チャンネルへ */
+const TEST_CHANNEL_DEFAULT = "1540746100204638208";
+async function channelFor(client, isTest) {
+  let cfg = null;
+  try { cfg = await fsGet("lboard_index/botcfg"); } catch (e) { }
+  cfg = cfg || {};
+  const test = /^\d{15,25}$/.test(String(cfg.testChannelId || "")) ? String(cfg.testChannelId) : TEST_CHANNEL_DEFAULT;
+  const main = process.env.DISCORD_SCHEDULE_CHANNEL_ID || "";
+  const id = (isTest || cfg.testAll) ? test : main;
+  if (!id) throw new Error("DISCORD_SCHEDULE_CHANNEL_ID が未設定です（Railway の Variables に、連絡事項チャンネルのIDを入れてください）");
+  try { return await client.channels.fetch(id); }
+  catch (e) { throw new Error("チャンネル " + id + " を開けませんでした（IDと、Botがそのチャンネルを見られるか確認してください）"); }
 }
 
 /* ---------------- 文面（core.js の既定と同じ） ---------------- */
@@ -252,7 +271,7 @@ async function drawAvatar(g, url, name, cx, cy, r) {
 }
 
 /* 画像を作る：title / sub / list（{name, avatar, gain, rank}） */
-async function renderCard({ title, sub, list, icons, siteUrl }) {
+async function renderCard({ title, sub, list, icons, siteUrl, medals }) {
   setupFonts();
   const W = 1080, PAD = 54, ROW = 160, GAP = 22, TOP = 210;
   const H = TOP + list.length * ROW + (list.length - 1) * GAP + PAD + 10;
@@ -277,7 +296,7 @@ async function renderCard({ title, sub, list, icons, siteUrl }) {
     const x = list[i], y = TOP + i * (ROW + GAP), cx0 = PAD + 20, w = W - (PAD + 20) * 2;
     rr(g, cx0, y, w, ROW, 40); g.fillStyle = "#FFFFFF"; g.fill();
     g.lineWidth = 3; g.strokeStyle = i < 3 ? "#E6D2A0" : "#EADFC4"; g.stroke();
-    medal(g, i, cx0 + 82, y + ROW / 2);
+    medal(g, medals === false ? 9 : i, cx0 + 82, y + ROW / 2);   // medals:false … 全員キラキラ（順位なし）
     await drawAvatar(g, [x.live, x.avatar], x.name, cx0 + 205, y + ROW / 2, 47);   // Discordの今のアイコン → 記録のアイコン
     // 名前
     const nx = cx0 + 290;
@@ -286,7 +305,13 @@ async function renderCard({ title, sub, list, icons, siteUrl }) {
     g.fillText(fitText(g, clean(x.name), w - 290 - 260), nx, y + 70);
     // 2行目：ランク（紋章＋文字）。note があればランクの右に小さく添える
     let tx = nx;
+    if (x.fromTier) {          // ランクアップ：前のティアの紋章 → 新しいティア
+      const fim = await rankImg(x.fromTier, icons, siteUrl, cache);
+      if (fim) { const ih = 36, iw = Math.min(ih * 1.6, fim.width * ih / fim.height); g.save(); g.globalAlpha = 0.55; g.drawImage(fim, tx, y + 92, iw, ih); g.restore(); tx += iw + 8; }
+      g.fillStyle = "#E0662F"; g.font = "700 30px SG"; g.textAlign = "left"; g.fillText("→", tx, y + 121); tx += g.measureText("→").width + 10;
+    }
     if (x.rank && x.rank.tier) {
+      const nx = tx;
       const im = await rankImg(x.rank.tier, icons, siteUrl, cache);
       if (im) { const ih = 44, iw = Math.min(ih * 1.6, im.width * ih / im.height); g.drawImage(im, nx, y + 88, iw, ih); tx = nx + iw + 12; }
       g.fillStyle = "#7A8794"; g.font = "700 28px SG";
@@ -307,13 +332,11 @@ async function renderCard({ title, sub, list, icons, siteUrl }) {
 async function postDay(client, day, opts) {
   opts = opts || {};
   if (!Canvas) throw new Error("@napi-rs/canvas が入っていません（package.json を更新して再デプロイしてください）");
-  const chId = process.env.DISCORD_SCHEDULE_CHANNEL_ID;
-  if (!chId) throw new Error("DISCORD_SCHEDULE_CHANNEL_ID が未設定です（Railway の Variables に、連絡事項チャンネルのIDを入れてください）");
   const [lp, msgs, icons, cfg] = await Promise.all([fsGet("lboard_index/lp"), fsGet("lboard_index/messages"), fsGet("lboard_index/rankicons"), fsGet("lboard_index/rising")]);
   if (!lp) throw new Error("LPの記録がありません");
   const c = Object.assign({ total: true, daily: true, top: 6 }, cfg || {});
   const top = Math.max(1, Math.min(10, c.top | 0 || 6));
-  const ch = await client.channels.fetch(chId);
+  const ch = await channelFor(client, !!opts.force);   // 今すぐ投稿（テスト）は実験チャンネルへ
   const tierEmoji = t => ((((icons || {}).tiers || {})[t] || {}).emoji || "");
   const sent = [];
   for (const kind of ["total", "daily"]) {
@@ -358,8 +381,8 @@ function startRisingPoster(client) {
         const d = /^\d{4}-\d{2}-\d{2}$/.test(cfg.requestDay || "") ? cfg.requestDay : day;
         let res, err = "";
         try { res = await postDay(client, d, { force: true }); } catch (e) { err = e.message; }
-        const patch = { handledAt: Date.now(), lastResult: err ? "失敗：" + err : "今すぐ投稿 " + d + " → " + res.join(" / ") };
-        if (!err && d === day && (hm >= AT || hm < "12:00")) { patch.lastDay = day; patch.lastAt = Date.now(); cfg.lastDay = day; }   // 同じ日を毎日投稿でもう一度出さない
+        const patch = { handledAt: Date.now(), lastResult: err ? "失敗：" + err : "今すぐ投稿（実験チャンネル） " + d + " → " + res.join(" / ") };
+        // 今すぐ投稿は実験チャンネルへ出るので、毎日の本番投稿はそのまま行う
         await fsPatch("lboard_index/rising", patch);
         console.log("[rising] 今すぐ投稿: " + (err || res.join(" / ")));
       }
@@ -384,4 +407,4 @@ function startRisingPoster(client) {
 
 module.exports = { startRisingPoster, ranking, renderCard, _rankLabel: rankLabel,
   // スナップショットの画像投稿（snapshot-poster.js）と共通の部品
-  shared: { Canvas, enc, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, md, wd, MEDAL_TXT } };
+  shared: { Canvas, enc, channelFor, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, md, wd, MEDAL_TXT } };

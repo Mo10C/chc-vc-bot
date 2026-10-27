@@ -19,7 +19,7 @@
 "use strict";
 
 const { shared } = require("./rising-poster");
-const { Canvas, enc, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, md, wd, MEDAL_TXT } = shared;
+const { Canvas, enc, channelFor, fsGet, fsReady, renderCard, liveAvatars, rankLabel, rankOfAbs, buildMessage, md, wd, MEDAL_TXT } = shared;
 
 const LATE_MS = 12 * 60 * 60 * 1000;
 const MARU = ["", "①", "②", "③", "④", "⑤", "⑥"];
@@ -52,13 +52,11 @@ async function fsSet(doc, pairs) {
   if (!r.ok) throw new Error("Firestore書き込み失敗 " + r.status + " " + (await r.text()).slice(0, 200));
 }
 
-async function ctx(client) {
-  const chId = process.env.DISCORD_SCHEDULE_CHANNEL_ID;
-  if (!chId) throw new Error("DISCORD_SCHEDULE_CHANNEL_ID が未設定です（Railway の Variables）");
+async function ctx(client, isTest) {
   if (!Canvas) throw new Error("@napi-rs/canvas が入っていません");
   const [lp, msgs, icons] = await Promise.all([fsGet("lboard_index/lp"), fsGet("lboard_index/messages"), fsGet("lboard_index/rankicons")]);
   const emo = t => ((((icons || {}).tiers || {})[t] || {}).emoji || "");
-  return { ch: await client.channels.fetch(chId), lp: lp || {}, msgs: msgs || {}, icons, emo };
+  return { ch: await channelFor(client, isTest), lp: lp || {}, msgs: msgs || {}, icons, emo };
 }
 const tplOf = (msgs, key) => Object.assign({}, DEFAULT_MSG[key], msgs[key] || {});
 const paused = (tpl, day) => !!(tpl.pause && day <= tpl.pause);
@@ -67,7 +65,7 @@ const paused = (tpl, day) => !!(tpl.pause && day <= tpl.pause);
 async function postRound(client, snap, day, withText, force) {
   const r = (snap.results || {})[day];
   if (!r || !Array.isArray(r.rows) || !r.rows.length) throw new Error(day + " の結果がありません");
-  const c = await ctx(client);
+  const c = await ctx(client, !!force);   // 今すぐ投稿（テスト）は実験チャンネルへ
   const tpl = tplOf(c.msgs, "snapshot");
   if (!force && paused(tpl, day)) return "一時停止中";
   const dates = (snap.dates || []).slice().sort();
@@ -95,7 +93,7 @@ async function postRound(client, snap, day, withText, force) {
 async function postFinal(client, snap, withText, force) {
   const chosen = Array.isArray(snap.final) ? snap.final : [];
   if (!chosen.length) throw new Error("表彰の結果がありません");
-  const c = await ctx(client);
+  const c = await ctx(client, !!force);   // 今すぐ投稿（テスト）は実験チャンネルへ
   const tpl = tplOf(c.msgs, "final");
   const dates = (snap.dates || []).slice().sort();
   const day = dates[dates.length - 1] || "";
