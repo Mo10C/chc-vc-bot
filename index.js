@@ -11,8 +11,10 @@
       （画像の出し方は管理画面「先生スナップショット」で選ぶ。snapshot-poster.js）
    ⑤ ランクアップ：Worker が 23:45 の集計で見つけた昇格者を、③と同じ体裁の画像で連絡事項へ投稿
       （画像の出し方は管理画面「メッセージ」で選ぶ。promote-poster.js）
+   ⑥ 卒業式：管理画面「卒業証書」→「🎓 卒業式の投稿」で押すと、卒業証書・感謝状を1人ずつ投稿
+      （画像は管理画面が作って Firestore に置く。文面も管理画面で編集。graduation-poster.js）
 
-   ②のためにメッセージを「読む」こと、③④⑤の投稿以外はメッセージを送りません。
+   ②のためにメッセージを「読む」こと、③④⑤⑥の投稿以外はメッセージを送りません。
    本文は保存しません（数えた回数だけを保存します）。
 
    ★ ②を使うには Developer Portal → Bot →「MESSAGE CONTENT INTENT」をオンにしてください。
@@ -37,6 +39,7 @@ const { startThanksTracker } = require("./thanks-tracker");
 const { startRisingPoster } = require("./rising-poster");
 const { startSnapshotPoster } = require("./snapshot-poster");
 const { startPromotePoster } = require("./promote-poster");
+const { startGraduationPoster } = require("./graduation-poster");
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 if (!TOKEN) {
@@ -72,6 +75,7 @@ async function messageContentEnabled() {
   startRisingPoster(client);   // ③ 毎日23:50 急上昇プレイヤーの画像を連絡事項へ
   startSnapshotPoster(client); // ④ 先生スナップショットの結果・表彰を、同じ体裁の画像で連絡事項へ
   startPromotePoster(client);  // ⑤ ランクアップした人を、同じ体裁の画像で連絡事項へ
+  startGraduationPoster(client); // ⑥ 卒業式：卒業証書・感謝状を1人ずつ
   if (withThanks) startThanksTracker(client);
   else console.warn("[thanks] MESSAGE CONTENT INTENT がオフなので、感謝ワードは数えません。" +
     "Developer Portal → Bot → MESSAGE CONTENT INTENT をオンにして、Railway で Restart してください（VC記録はこのまま動きます）");
