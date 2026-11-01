@@ -90,7 +90,7 @@ async function postRound(client, snap, day, withText, force) {
   return (withText ? "文字＋画像" : "画像") + "を投稿（" + list.length + "人）";
 }
 
-/* 代表先生の表彰 */
+/* 代表先生の表彰。withText：true＝文字＋画像を1通で／"separate"＝文字を出してから画像を別に（both のとき）／false＝画像だけ */
 async function postFinal(client, snap, withText, force) {
   const chosen = Array.isArray(snap.final) ? snap.final : [];
   if (!chosen.length) throw new Error("表彰の結果がありません");
@@ -113,7 +113,11 @@ async function postFinal(client, snap, withText, force) {
   const at = snap.finalAt || Date.now();
   const content = withText ? buildMessage(tpl, { title, label, rounds: dates.length, n: chosen.length, md: day ? md(day) : "", date: day, time: hhmm(at) },
     chosen.map((t, i) => ({ medal: MEDAL_TXT[i] || "✨", rank: i + 1, name: t.name, total: t.total | 0, detail: detailOf(t) ? "（" + detailOf(t) + "）" : "" }))) : "";
-  await c.ch.send({ content: ((snap.dummy ? DUMMY_NOTE : snap.testNote ? TEST_NOTE : "") + content) || undefined, files: [{ attachment: png, name: "snapshot-final.png" }] });
+  const note = snap.dummy ? DUMMY_NOTE : snap.testNote ? TEST_NOTE : "";
+  if (withText === "separate" && content) {
+    await c.ch.send({ content: note + content });                       // 表彰の文字
+    await c.ch.send({ files: [{ attachment: png, name: "snapshot-final.png" }] });   // 表彰の画像
+  } else await c.ch.send({ content: (note + content) || undefined, files: [{ attachment: png, name: "snapshot-final.png" }] });
   return "表彰の" + (withText ? "文字＋画像" : "画像") + "を投稿（" + list.length + "人）";
 }
 
@@ -152,7 +156,7 @@ function startSnapshotPoster(client) {
             const target = Object.assign({}, snap, { testNote: true, results: { [tr.day]: { at: tr.at, rows: tr.rows || [] } },
               final: tr.final || [], finalAt: tr.at });
             res = await postRound(client, target, tr.day, mode === "bot", true);
-            if (snap.imgRequestFinal && (tr.final || []).length) res += "／" + await postFinal(client, target, mode === "bot", true);
+            if (snap.imgRequestFinal && (tr.final || []).length) res += "／" + await postFinal(client, target, mode === "bot" ? true : (tr.finalTextByBot ? "separate" : false), true);
           } else {
             const target = snap.imgRequestDummy ? await dummySnap(snap) : snap;
             const d = snap.imgRequestDummy ? target.dates[target.dates.length - 1] : String(snap.imgRequestDay || "");
@@ -175,7 +179,8 @@ function startSnapshotPoster(client) {
       }
       if (snap.finalAt && !snap.finalBotAt && now - snap.finalAt < LATE_MS && Array.isArray(snap.final) && snap.final.length) {
         let res;
-        try { res = await postFinal(client, snap, mode === "bot", false); } catch (e) { res = "失敗：" + e.message; }
+        // 結果の画像（上のループ）のあとに出すので、順番は「結果 → 画像 → 表彰 → 画像」になる
+        try { res = await postFinal(client, snap, mode === "bot" ? true : (snap.finalTextByBot ? "separate" : false), false); } catch (e) { res = "失敗：" + e.message; }
         await fsSet("lboard_index/snapshot", [[["finalBotAt"], Date.now()], [["imgLastResult"], "表彰 → " + res]]);
         console.log("[snapshot] 表彰: " + res);
       }
