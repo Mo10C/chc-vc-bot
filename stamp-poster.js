@@ -11,7 +11,8 @@
      post.fullEnabled  … ぜんぶうめたときに投稿する（既定オン）
      post.full         … その文面。{name} {mention} {count} {total} {lines} {title} が置きかわる
                          サイトが users.<id>.fullAt を書き、Bot が fullPostedAt を書く
-     post.bingoEnabled … ビンゴ（達成）したときも投稿する（既定オフ）。文面は post.complete
+     post.bingoEnabled … ①ビンゴした人のお祝い（既定オン）。文面は post.complete
+     testKind          … テスト投稿のパターン（both＝①②を続けて（既定）／bingo＝①だけ／full＝②だけ）
      post.image        … ランクアップのようなお祝い画像をつける（既定オン）
    ・画像の右下のマスコットは assets/rankup-mascot.png、押してあるハンコは assets/stamp.png
      testRequestAt … 「🧪 実験チャンネルにテスト投稿」。testHandledAt / testLastResult を Bot が書く
@@ -23,7 +24,8 @@ const { shared } = require("./rising-poster");
 const { Canvas, enc, channelFor, fsGet, fsReady, DUMMY_NOTE, liveAvatars, setupFonts, loadImg, rr, star, clean, fitText, md, wd } = shared;
 
 const LATE_MS = 3 * 24 * 60 * 60 * 1000;
-const DEFAULT_TEXT = "🎉 **{name}** さんが「{title}」で **ビンゴ！**（{lines}ライン・{count}マス）\nおめでとうございます！ まだの人も、いっしょに遊ぼう 🎮";
+const DEFAULT_TEXT = "🎉 **{name}** さんが「{title}」で **ビンゴ**しました！\nおめでとうございます！ まだの人も、いっしょに遊ぼう 🎮";
+const OLD_TEXT = "🎉 **{name}** さんが「{title}」で **ビンゴ！**（{lines}ライン・{count}マス）\nおめでとうございます！ まだの人も、いっしょに遊ぼう 🎮";
 const DEFAULT_FULL = "🏆 **{name}** さんが「{title}」のカードを **ぜんぶうめました**！\nすごい！ おめでとうございます 🎊";
 const OLD_FULL = "🏆 **{name}** さんが「{title}」のカードを **ぜんぶうめました**！（{count}マス・{lines}ライン）\nすごい！ おめでとうございます 🎊";
 
@@ -69,7 +71,7 @@ function textFor(cfg, id, u, kind) {
   const count = tasks.filter(t => u.stamps && u.stamps[t.id]).length;
   const discordId = /^u_\d+$/.test(id) ? id.slice(2) : "";
   const pf = cfg.post && cfg.post.full;
-  const tx = kind === "full" ? ((pf && pf !== OLD_FULL) ? pf : DEFAULT_FULL) : ((cfg.post && cfg.post.complete) || DEFAULT_TEXT);
+  const tx = kind === "full" ? ((pf && pf !== OLD_FULL) ? pf : DEFAULT_FULL) : (((cfg.post && cfg.post.complete) && cfg.post.complete !== OLD_TEXT) ? cfg.post.complete : DEFAULT_TEXT);
   return fill(tx, {
     name: u.name || "—", mention: discordId ? "<@" + discordId + ">" : (u.name || "—"),
     count, total: need, lines: linesOf(cfg, u.stamps), title: cfg.title || "スタンプカード" });
@@ -84,7 +86,7 @@ async function renderStamp(cfg, id, u, kind, avatarUrl) {
   const bg = g.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, "#FBFFF0"); bg.addColorStop(0.55, "#EAF7CF"); bg.addColorStop(1, "#CFEBA2");
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
-  const cx = 290, cy = 330;
+  const cx = 280, cy = 300;
   g.save(); g.translate(cx, cy);
   for (let i = 0; i < 12; i++) {
     g.rotate(Math.PI * 2 / 12);
@@ -123,52 +125,72 @@ async function renderStamp(cfg, id, u, kind, avatarUrl) {
     g.drawImage(stampIm, -80, -80, 160, 160); g.restore();
   }
 
-  // 右：文字
-  const X = 510;
+  // 右：イベント名 → 大見出し → 名前 → ひとこと帯 → 押したカード
+  const X = 515, day = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   g.textAlign = "left"; g.textBaseline = "alphabetic";
+  // イベント名（緑のふだ）
+  g.font = "900 24px JPB";
+  const ev = fitText(g, clean(cfg.title || "スタンプカード"), W - X - 120), evw = g.measureText(ev).width + 44;
+  rr(g, X, 62, evw, 44, 22); g.fillStyle = LEAF; g.fill();
+  g.fillStyle = "#FFFFFF"; g.fillText(ev, X + 22, 93);
+  // 大見出し
   const big = kind === "full" ? "COMPLETE!" : "BINGO!";
-  const tg = g.createLinearGradient(X, 80, X, 190); tg.addColorStop(0, "#FFE27A"); tg.addColorStop(0.5, "#FFB627"); tg.addColorStop(1, "#F07F1A");
-  let bfs = 112; g.font = "700 " + bfs + "px SG";
+  const tg = g.createLinearGradient(X, 110, X, 220); tg.addColorStop(0, "#FFE27A"); tg.addColorStop(0.5, "#FFB627"); tg.addColorStop(1, "#F07F1A");
+  let bfs = 116; g.font = "700 " + bfs + "px SG";
   while (bfs > 70 && g.measureText(big).width > W - X - 60) { bfs -= 4; g.font = "700 " + bfs + "px SG"; }
-  g.lineJoin = "round"; g.lineWidth = 12; g.strokeStyle = INK; g.strokeText(big, X, 178); g.fillStyle = tg; g.fillText(big, X, 178);
+  g.lineJoin = "round"; g.lineWidth = 14; g.strokeStyle = INK; g.strokeText(big, X - 4, 214); g.fillStyle = tg; g.fillText(big, X - 4, 214);
   // 名前
-  g.fillStyle = INK; let fs = 60; g.font = "900 " + fs + "px JPB";
-  while (fs > 32 && g.measureText(clean(u.name) + " さん").width > W - X - 70) { fs -= 2; g.font = "900 " + fs + "px JPB"; }
+  g.fillStyle = INK; let fs = 56; g.font = "900 " + fs + "px JPB";
+  while (fs > 30 && g.measureText(clean(u.name) + " さん").width > W - X - 70) { fs -= 2; g.font = "900 " + fs + "px JPB"; }
   const nm = fitText(g, clean(u.name), W - X - 70 - g.measureText(" さん").width);
-  g.fillText(nm, X, 268);
+  g.fillText(nm, X, 296);
   const nw = g.measureText(nm).width;
-  g.font = "900 " + Math.round(fs * 0.55) + "px JPB"; g.fillStyle = SUB; g.fillText(" さん", X + nw, 268);
-  // カード（押したマス）と数
-  const G = gridOf(cfg, u.stamps), count = G.cells.filter(c => c !== "__free" && u.stamps && u.stamps[c]).length;
-  const box = { x: X, y: 300, w: W - X - 60, h: 196 };
-  rr(g, box.x, box.y, box.w, box.h, 26); g.fillStyle = "rgba(255,255,255,.82)"; g.fill();
-  g.lineWidth = 2.5; g.strokeStyle = "rgba(125,190,60,.55)"; g.stroke();
-  const gs = box.h - 36, gap = G.cols >= 5 ? 4 : 7, cs = (gs - gap * (Math.max(G.cols, G.rows) - 1)) / Math.max(G.cols, G.rows);
-  const gx = box.x + 22, gy = box.y + 18, hit = new Set([].concat(...G.lines));
+  g.font = "900 " + Math.round(fs * 0.55) + "px JPB"; g.fillStyle = SUB; g.fillText(" さん", X + nw, 296);
+  // ひとこと帯（リボン）
+  const msg = kind === "full" ? "スタンプカードをぜんぶうめました！" : "ビンゴたっせい！";
+  g.font = "900 28px JPB"; const mw0 = g.measureText(msg).width + 56, ry = 322;
+  g.fillStyle = "#E88A16";
+  g.beginPath(); g.moveTo(X - 12, ry + 8); g.lineTo(X + 14, ry + 8); g.lineTo(X + 14, ry + 58); g.lineTo(X - 12, ry + 58); g.lineTo(X + 2, ry + 33); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(X + mw0 + 12, ry + 8); g.lineTo(X + mw0 - 14, ry + 8); g.lineTo(X + mw0 - 14, ry + 58); g.lineTo(X + mw0 + 12, ry + 58); g.lineTo(X + mw0 - 2, ry + 33); g.closePath(); g.fill();
+  rr(g, X, ry, mw0, 54, 10); g.fillStyle = "#FFB627"; g.fill();
+  g.fillStyle = INK; g.fillText(msg, X + 28, ry + 37);
+
+  // 押したカード（少しかたむけた白いカード。ビンゴのラインには金の線）
+  const G = gridOf(cfg, u.stamps), hit = new Set([].concat(...G.lines));
+  const n = Math.max(G.cols, G.rows), CS = 214, pad = 14, gap = n >= 5 ? 5 : 8, cs = (CS - pad * 2 - gap * (n - 1)) / n;
+  const ccx = X + 10 + CS / 2, ccy = 412 + CS / 2;
+  g.save(); g.translate(ccx, ccy); g.rotate(-0.06);
+  g.shadowColor = "rgba(46,74,23,.28)"; g.shadowBlur = 22; g.shadowOffsetY = 8;
+  rr(g, -CS / 2, -CS / 2, CS, CS, 22); g.fillStyle = "#FFFFFF"; g.fill();
+  g.shadowColor = "transparent"; g.lineWidth = 3; g.strokeStyle = LEAF; g.stroke();
+  const ox = -CS / 2 + pad, oy = -CS / 2 + pad, at = i => [ox + (i % G.cols) * (cs + gap), oy + Math.floor(i / G.cols) * (cs + gap)];
   G.cells.forEach((c, i) => {
-    const x = gx + (i % G.cols) * (cs + gap), y = gy + Math.floor(i / G.cols) * (cs + gap);
-    rr(g, x, y, cs, cs, Math.max(4, cs * 0.18));
-    g.fillStyle = c === "__free" ? "#FFF3C4" : hit.has(i) ? "#FFF0D2" : "#F3F8E8"; g.fill();
-    if (!hit.has(i)) { g.lineWidth = 1.5; g.strokeStyle = "rgba(125,190,60,.45)"; g.stroke(); }
-    if (hit.has(i)) { g.lineWidth = 2.5; g.strokeStyle = GOLD; g.stroke(); }
-    if (c === "__free") { g.fillStyle = "#C78A00"; g.font = "700 " + Math.round(cs * 0.28) + "px SG"; g.textAlign = "center"; g.fillText("FREE", x + cs / 2, y + cs * 0.6); g.textAlign = "left"; }
-    else if (u.stamps && u.stamps[c] && stampIm) { g.save(); g.translate(x + cs / 2, y + cs / 2); g.rotate(-0.24 + ((i * 37) % 7) * 0.05); g.drawImage(stampIm, -cs * 0.55, -cs * 0.55, cs * 1.1, cs * 1.1); g.restore(); }
+    const [x, y] = at(i);
+    rr(g, x, y, cs, cs, Math.max(4, cs * 0.2));
+    g.fillStyle = c === "__free" ? "#FFF3C4" : "#F3F8E8"; g.fill();
+    g.lineWidth = 1.5; g.strokeStyle = c === "__free" ? GOLD : "rgba(125,190,60,.5)"; g.stroke();
+    if (c === "__free") { g.fillStyle = "#C78A00"; g.font = "700 " + Math.round(cs * 0.3) + "px SG"; g.textAlign = "center"; g.fillText("FREE", x + cs / 2, y + cs * 0.62); g.textAlign = "left"; }
+    else if (u.stamps && u.stamps[c] && stampIm) { g.save(); g.translate(x + cs / 2, y + cs / 2); g.rotate(-0.24 + ((i * 37) % 7) * 0.05); g.drawImage(stampIm, -cs * 0.56, -cs * 0.56, cs * 1.12, cs * 1.12); g.restore(); }
   });
-  const tx = gx + gs + 30;
-  g.fillStyle = INK; g.font = "700 64px SG"; g.fillText(String(count), tx, box.y + 92);
-  let w1 = g.measureText(String(count)).width; g.font = "900 26px JPB"; g.fillStyle = SUB; g.fillText(" マス", tx + w1, box.y + 92);
-  if (cfg.mode !== "card") {
-    g.fillStyle = INK; g.font = "700 64px SG"; g.fillText(String(G.lines.length), tx, box.y + 166);
-    w1 = g.measureText(String(G.lines.length)).width; g.font = "900 26px JPB"; g.fillStyle = SUB; g.fillText(" ライン", tx + w1, box.y + 166);
+  if (kind !== "full") {
+    g.lineCap = "round"; g.lineWidth = Math.max(6, cs * 0.22); g.strokeStyle = "rgba(255,182,39,.8)";
+    G.lines.forEach(L => { const [x1, y1] = at(L[0]), [x2, y2] = at(L[L.length - 1]);
+      g.beginPath(); g.moveTo(x1 + cs / 2, y1 + cs / 2); g.lineTo(x2 + cs / 2, y2 + cs / 2); g.stroke(); });
   }
-  // 下：イベント名と学校名
-  const day = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  const sub = "「" + clean(cfg.title || "スタンプカード") + "」" + (kind === "full" ? "をぜんぶうめた！" : "でビンゴ！");
-  let sfs = 26; g.font = "900 " + sfs + "px JPB";
-  while (sfs > 18 && g.measureText(sub).width > W - X - 200) { sfs -= 1; g.font = "900 " + sfs + "px JPB"; }
-  g.fillStyle = INK; g.fillText(fitText(g, sub, W - X - 200), X, 546);
-  g.fillStyle = SUB; g.font = "700 22px JP";
-  g.fillText(md(day) + "（" + wd(day) + "）  クラウドハッシュテイル校", X, 586);
+  g.restore();
+  // ふきだし（マスコットから）
+  const bx = X + CS + 52, by = 470, btx = "おめでとう！";
+  g.font = "900 30px JPB"; const bw = g.measureText(btx).width + 44;
+  g.save(); g.translate(bx, by); g.rotate(-0.05);
+  g.shadowColor = "rgba(46,74,23,.2)"; g.shadowBlur = 10; g.shadowOffsetY = 4;
+  rr(g, 0, 0, bw, 60, 30); g.fillStyle = "#FFFFFF"; g.fill();
+  g.beginPath(); g.moveTo(bw - 70, 56); g.lineTo(bw - 40, 56); g.lineTo(bw - 34, 82); g.closePath(); g.fill();
+  g.shadowColor = "transparent"; g.fillStyle = "#E2477E"; g.fillText(btx, 22, 41);
+  g.restore();
+  // 左下：日付と学校名（アイコンの下）
+  g.textAlign = "center"; g.fillStyle = SUB; g.font = "700 22px JP";
+  g.fillText(md(day) + "（" + wd(day) + "）  クラウドハッシュテイル校", cx, 610);
+  g.textAlign = "left";
   const mascot = await loadImg("assets/rankup-mascot.png");
   if (mascot) { const mh = 150, mw = mascot.width * mh / mascot.height; g.save(); g.shadowColor = "rgba(46,74,23,.3)"; g.shadowBlur = 14; g.drawImage(mascot, W - 48 - mw, H - 36 - mh, mw, mh); g.restore(); }
   return cv.encode("png");
@@ -202,13 +224,20 @@ function startStampPoster(client) {
           // テストに使う人：いちばんスタンプの多い人（だれもいなければ「テスト生徒」）
           const ent = Object.entries(rec.users || {}).sort((a, b) => Object.keys((b[1] || {}).stamps || {}).length - Object.keys((a[1] || {}).stamps || {}).length)[0];
           const [id, u] = ent || ["u_0", { name: "テスト生徒", stamps: {} }];
-          // テストはコンプリートしたことにして出す
-          const all = {}; (cfg.tasks || []).forEach(t => { all[t.id] = { at: Date.now() }; });
+          // テスト：①ビンゴ（いちばん上の段だけそろえる）→ ②コンプリート（ぜんぶ）を続けて投稿
+          const kinds = cfg.testKind === "bingo" ? ["complete"] : cfg.testKind === "full" ? ["full"] : ["complete", "full"];
+          const now0 = Date.now(), allStamps = {}, rowStamps = {};
+          (cfg.tasks || []).forEach(t => { allStamps[t.id] = { at: now0 }; });
+          const G = gridOf(cfg, allStamps);
+          (G.lines[0] || []).map(i => G.cells[i]).filter(c => c !== "__free").forEach(t => { rowStamps[t] = { at: now0 }; });
           const ch = await channelFor(client, true);
-          const uu = Object.assign({}, u, { stamps: all });
-          // テストは「ぜんぶうめた」のお祝いを1通だけ（画像つき）
-          await sendCelebration(client, ch, cfg, id, uu, "full", DUMMY_NOTE, false);
-          res = "投稿しました";
+          const done = [];
+          for (const k of kinds) {
+            const uu = Object.assign({}, u, { stamps: k === "full" ? allStamps : rowStamps });
+            await sendCelebration(client, ch, cfg, id, uu, k, DUMMY_NOTE, false);
+            done.push(k === "full" ? "②コンプリート" : "①ビンゴ");
+          }
+          res = done.join("・") + "を投稿しました";
         } catch (e) { res = "失敗：" + e.message; }
         await fsSet("lboard_index/stamp", [[["testHandledAt"], Date.now()], [["testLastResult"], "テスト → " + res]]);
         console.log("[stamp] テスト投稿: " + res);
@@ -217,7 +246,7 @@ function startStampPoster(client) {
       const rec = await fsGet("lboard_index/stamps");
       const now = Date.now();
       const fullOn = !cfg.post || cfg.post.fullEnabled !== false;
-      const bingoOn = !!(cfg.post && cfg.post.bingoEnabled);   // ビンゴ（達成）の投稿は既定オフ
+      const bingoOn = !cfg.post || cfg.post.bingoEnabled !== false;   // ①ビンゴした人（既定オン）
       for (const [id, u] of Object.entries((rec && rec.users) || {})) {
         if (!u) continue;
         // [達成の時刻, 投稿済みの印, 種類]
