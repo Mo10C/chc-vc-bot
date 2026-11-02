@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>スタンプカード ｜ クラウドハッシュテイル校 TOOLS</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="theme-color" content="#7CA455">
+<meta name="description" content="みんなで遊ぼう週間のスタンプカード。お題をクリアしてスタンプを集めよう">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Mochiy+Pop+One&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ui.css?v=5.3">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+.panel{background:var(--surface);border:1.5px solid var(--border);border-radius:18px;box-shadow:var(--shadow-soft);overflow:hidden;margin-bottom:14px}
+.phead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 17px;border-bottom:1px solid var(--border)}
+.phead h2{font-size:15px;font-weight:900}
+.phead .sub{font-size:11px;color:var(--muted)}
+.pbody{padding:14px 17px 17px}
+.spacer{flex:1}
+.muted{font-size:11.5px;color:var(--muted)}
+.btn{border:none;border-radius:14px;padding:11px 20px;font-size:14px;font-weight:900;cursor:pointer;font-family:inherit;color:#fff;
+  background:linear-gradient(135deg,#FF8FB8,#8A6CFF);box-shadow:0 10px 22px -12px #8A6CFF;transition:transform .12s}
+.btn:hover{transform:translateY(-1px)} .btn:disabled{opacity:.45;cursor:default;transform:none}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1.5px solid var(--border);box-shadow:none}
+.btn.danger{background:var(--surface);color:#C8372D;border:1.5px solid #E9B4AE;box-shadow:none}
+input[type=text],textarea{border:1.5px solid var(--border);border-radius:11px;background:var(--surface);color:var(--ink);font-family:inherit;font-size:13px;padding:8px 10px;width:100%}
+
+/* ---- ヘッダー ---- */
+.hero{position:relative;border-radius:24px;overflow:hidden;padding:22px 22px 18px;margin-bottom:14px;color:#fff;
+  background:radial-gradient(circle at 15% 20%,#FF8FB8 0,transparent 40%),radial-gradient(circle at 85% 10%,#7FD4FF 0,transparent 42%),linear-gradient(135deg,#FF6FA5,#8A6CFF 55%,#3FB6FF)}
+.hero h1{font-family:"Mochiy Pop One",sans-serif;font-size:clamp(26px,5vw,40px);line-height:1.15;-webkit-text-stroke:6px #3B2A8F;paint-order:stroke fill;letter-spacing:.02em}
+.hero .per{display:inline-block;margin-top:8px;background:rgba(255,255,255,.92);color:#5B43C9;font-weight:900;font-size:12.5px;padding:4px 12px;border-radius:999px}
+.hero .st{display:inline-block;margin:8px 0 0 6px;font-weight:900;font-size:12.5px;padding:4px 12px;border-radius:999px;background:#FFE45C;color:#3B2A8F}
+.hero .st.off{background:rgba(255,255,255,.3);color:#fff}
+.hero .mas{position:absolute;right:10px;bottom:-6px;width:min(150px,28vw);filter:drop-shadow(0 6px 10px rgba(40,10,110,.3))}
+.prog{margin-top:14px;max-width:calc(100% - 150px)}
+.prog .bar{height:14px;border-radius:999px;background:rgba(255,255,255,.3);overflow:hidden}
+.prog .bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#FFE45C,#FFB13D);transition:width .6s}
+.prog .lb{font-weight:900;font-size:14px;margin-bottom:6px}
+.prog .lb b{font-family:"Space Grotesk",sans-serif;font-size:22px}
+@media (max-width:600px){.prog{max-width:100%}.hero .mas{display:none}}
+
+/* ---- カード ---- */
+.card{display:grid;grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));gap:12px;max-width:820px;margin:0 auto}
+@media (max-width:600px){.card{grid-template-columns:repeat(min(var(--cols,3),3),minmax(0,1fr));gap:8px}.cell{min-height:132px;padding:12px 6px 10px}.cell small{display:none}}
+.cell{position:relative;border:2.5px dashed color-mix(in srgb,#8A6CFF 40%,var(--border));border-radius:20px;background:var(--surface);
+  padding:14px 10px 12px;text-align:center;cursor:pointer;min-height:150px;transition:transform .12s,border-color .12s;user-select:none}
+.cell:hover{transform:translateY(-2px);border-color:#8A6CFF}
+.cell .ic{font-size:40px;line-height:1;display:block;margin-bottom:8px}
+.cell .ic img{width:48px;height:48px;border-radius:50%;object-fit:cover}
+.cell b{display:block;font-size:14px;font-weight:900}
+.cell small{display:block;font-size:11px;color:var(--muted);margin-top:4px;line-height:1.45}
+.cell.done{border-style:solid;border-color:#F4A3BE;background:color-mix(in srgb,#FFE6EF 55%,var(--surface))}
+.cell.done .ic{opacity:.45}
+.cell.done small{display:none}
+.cell .game{display:block;font-size:11px;font-weight:900;color:#E2477E;margin-top:6px;opacity:1}
+.stampmark{position:absolute;right:8px;top:8px;width:74px;height:74px;border-radius:50%;border:5px double #E0384D;color:#E0384D;
+  display:grid;place-items:center;text-align:center;font-weight:900;transform:rotate(-14deg);background:rgba(255,255,255,.35);pointer-events:none}
+.stampmark span{font-family:"Mochiy Pop One",sans-serif;font-size:15px;line-height:1.05}
+.stampmark em{display:block;font-style:normal;font-family:"Space Grotesk",sans-serif;font-size:11px;margin-top:2px}
+.stampmark.img{border:none;background:none;width:84px;height:84px;right:4px;top:4px}
+.stampmark.img img{width:100%;height:100%;object-fit:contain}
+.stampmark.img em{position:absolute;left:0;right:0;bottom:-4px;text-align:center;color:#E0384D;text-shadow:0 0 3px #fff,0 0 3px #fff}
+.stampmark.drop{animation:drop .45s cubic-bezier(.2,1.6,.4,1) both}
+@media (max-width:600px){
+  .stampmark{right:auto;left:50%;top:6px;width:64px;height:64px;margin-left:-32px;border-width:4px}
+  .stampmark span{font-size:13px}.stampmark em{font-size:9.5px}
+  .stampmark.img{right:auto;top:2px;width:72px;height:72px;margin-left:-36px}
+  .cell.done .ic{visibility:hidden}.cell.done b{margin-top:30px}
+}
+@keyframes drop{0%{transform:rotate(-14deg) scale(2.4);opacity:0}60%{opacity:1}100%{transform:rotate(-14deg) scale(1)}}
+.locked{opacity:.6;cursor:default}
+
+/* ---- ランキング・みんなのスタンプ ---- */
+.rk{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border);cursor:pointer}
+.rk:last-child{border-bottom:none}
+.rk .no{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:13px;background:var(--surface-2);flex:none}
+.rk .no.m1{background:#F4C542;color:#4A3A10}.rk .no.m2{background:#C9D1D9}.rk .no.m3{background:#D9A066;color:#4A3A10}
+.av{width:34px;height:34px;border-radius:50%;object-fit:cover;flex:none}
+.avf{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:900;font-size:13px;flex:none}
+.rk .nm{font-weight:900;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rk .dots{display:flex;gap:3px;flex-wrap:wrap;margin-left:auto}
+.rk .dots i{width:10px;height:10px;border-radius:50%;background:color-mix(in srgb,#8A6CFF 14%,var(--surface))}
+.rk .dots i.on{background:#E0384D}
+.rk .ct{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:14px;min-width:54px;text-align:right}
+.rk .cp{font-size:11px;font-weight:900;color:#fff;background:linear-gradient(135deg,#FFB13D,#E2477E);padding:2px 8px;border-radius:999px;flex:none}
+.rk.me{background:color-mix(in srgb,#8A6CFF 8%,var(--surface));border-radius:12px}
+.feed{display:flex;flex-direction:column;gap:8px}
+.fd{display:flex;gap:10px;align-items:flex-start;font-size:13px}
+.fd .tx{min-width:0}
+.fd .tx small{display:block;color:var(--muted);font-size:11px}
+.cols2{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:14px}
+@media (max-width:820px){.cols2{grid-template-columns:1fr}}
+
+/* ---- 押すときの窓 ---- */
+.mod{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:rgba(10,16,30,.55);backdrop-filter:blur(3px);padding:16px}
+.mod.on{display:grid}
+.modc{background:var(--surface);border-radius:22px;padding:20px;width:min(520px,100%);max-height:90vh;overflow:auto;box-shadow:0 30px 60px -20px rgba(0,0,0,.5)}
+.modc h3{font-size:18px;font-weight:900;display:flex;align-items:center;gap:8px}
+.modc h3 .ic{font-size:30px}
+.modc h3 .ic img{width:36px;height:36px;border-radius:50%;object-fit:cover}
+.modc .ds{font-size:12.5px;color:var(--muted);margin:4px 0 14px}
+.modc label.lb{display:block;font-size:12px;font-weight:900;margin:12px 0 5px}
+.pick{display:flex;flex-wrap:wrap;gap:6px;max-height:190px;overflow:auto;padding:2px}
+.pk{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--border);border-radius:999px;padding:3px 10px 3px 3px;cursor:pointer;font-size:12px;font-weight:900;background:var(--surface)}
+.pk .av,.pk .avf{width:24px;height:24px;font-size:10px}
+.pk.on{border-color:#8A6CFF;background:color-mix(in srgb,#8A6CFF 12%,var(--surface))}
+.acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px}
+.cpwin{text-align:center}
+.cpwin .big{font-family:"Mochiy Pop One",sans-serif;font-size:30px;color:#E2477E;margin:8px 0}
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:60}
+.viewbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:900}
+/* スマホ：ランキングは名前と数だけ（点は出さない）。コンプリートの札は🎫だけ */
+@media (max-width:600px){.rk .dots{display:none}.rk .nm{flex:1}.rk .cp{font-size:0;padding:2px 6px}.rk .cp::before{content:"🎫";font-size:12px}}
+/* 4×4・5×5 のときは、ハンコをマスのまん中に大きく押す。スマホでも列をそのままにしてマスを小さくする */
+.card.wide .cell{min-height:132px;padding:12px 6px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.card.wide .cell .ic{font-size:34px}.card.wide .cell .ic img{width:42px;height:42px}
+.card.wide .cell b{font-size:13px}
+.card.wide .cell.done .ic,.card.wide .cell.done b,.card.wide .cell.done .game{visibility:visible;opacity:.28;margin-top:0}
+.card.wide .cell.done small{display:none}
+.card.wide .stampmark{left:50%;top:50%;right:auto;margin:0;transform:translate(-50%,-50%) rotate(-14deg);width:96px;height:96px}
+.card.wide .stampmark.img{width:116px;height:116px;margin:0}
+.card.wide .stampmark.img em{bottom:-6px;font-size:12px}
+.card.wide .stampmark.drop{animation-name:dropc}
+@keyframes dropc{0%{transform:translate(-50%,-50%) rotate(-14deg) scale(2.4);opacity:0}60%{opacity:1}100%{transform:translate(-50%,-50%) rotate(-14deg) scale(1)}}
+@media (max-width:600px){
+  .cell small{display:none}
+  .card.wide{grid-template-columns:repeat(var(--cols),minmax(0,1fr));gap:5px}
+  .card.wide .cell{min-height:0;aspect-ratio:1/1.15;padding:4px 2px;border-radius:12px;border-width:2px;overflow:hidden}
+  .card.wide .cell small,.card.wide .cell .game{display:none}
+  .card.wide .cell .ic{font-size:22px;margin-bottom:3px}.card.wide .cell .ic img{width:26px;height:26px}
+  .card.wide .cell b{font-size:9.5px;line-height:1.2;word-break:break-all}
+  .card.wide .stampmark{width:50px;height:50px;border-width:3px}
+  .card.wide .stampmark.img{width:58px;height:58px}
+  .card.wide .stampmark span{font-size:9px}.card.wide .stampmark em{font-size:8px}
+  .card.wide .stampmark.img em{bottom:-3px;font-size:8.5px}
+}
+/* ---- ビンゴ ---- */
+.card{position:relative}
+.bgsvg{position:absolute;left:0;top:0;pointer-events:none;overflow:visible;z-index:3}
+.bgsvg line{stroke:#FFB627;stroke-width:12;stroke-linecap:round;opacity:.62}
+.bgsvg line.new{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);animation:lineIn .7s .25s ease-out forwards}
+@keyframes lineIn{to{stroke-dashoffset:0}}
+.cell.hit{border-color:#FFB627;box-shadow:0 0 0 3px color-mix(in srgb,#FFB627 35%,transparent)}
+.cell.reach:not(.done){border-color:#FF6FA8;border-style:solid;animation:reach 1.3s ease-in-out infinite}
+@keyframes reach{50%{box-shadow:0 0 0 5px color-mix(in srgb,#FF6FA8 35%,transparent)}}
+.cell.reach:not(.done)::after{content:"リーチ";position:absolute;left:50%;top:-9px;transform:translateX(-50%);font-size:10px;font-weight:900;color:#fff;background:#FF6FA8;padding:1px 7px;border-radius:999px;white-space:nowrap}
+.cell.free{border-style:solid;border-color:#FFB627;background:color-mix(in srgb,#FFF4CC 60%,var(--surface));cursor:default}
+.cell.free b{font-family:"Space Grotesk",sans-serif;font-size:18px;letter-spacing:.08em;color:#C78A00}
+.prog .reach{display:inline-block;background:#FF6FA8;color:#fff;font-size:12px;padding:2px 10px;border-radius:999px;margin-left:6px;vertical-align:2px}
+.rk .mini{display:grid;grid-template-columns:repeat(var(--c),7px);gap:2px;margin-left:auto;flex:none}
+.rk .mini i{width:7px;height:7px;border-radius:2px;background:color-mix(in srgb,#8A6CFF 14%,var(--surface))}
+.rk .mini i.on{background:#E0384D}.rk .mini i.ln{background:#FFB627}.rk .mini i.fr{background:#F4D47A}
+.rk .ct small{display:block;font-size:10.5px;color:var(--muted);font-weight:400}
+.bingoban{position:fixed;left:50%;top:38%;z-index:70;pointer-events:none;font-family:"Mochiy Pop One",sans-serif;font-size:clamp(54px,14vw,120px);color:#FFE45C;
+  -webkit-text-stroke:10px #E2477E;paint-order:stroke fill;transform:translate(-50%,-50%) scale(0);animation:ban 1.8s cubic-bezier(.2,1.5,.4,1) forwards;white-space:nowrap}
+.bingoban small{display:block;text-align:center;font-size:.32em;-webkit-text-stroke:6px #E2477E}
+@keyframes ban{0%{transform:translate(-50%,-50%) scale(0) rotate(-12deg)}25%{transform:translate(-50%,-50%) scale(1.08) rotate(-6deg)}35%{transform:translate(-50%,-50%) scale(1) rotate(-6deg)}80%{opacity:1}100%{transform:translate(-50%,-50%) scale(1) rotate(-6deg);opacity:0}}
+@media (max-width:600px){.bgsvg line{stroke-width:7}.cell.reach:not(.done)::after{font-size:8px;top:2px;padding:0 5px}.rk .mini{grid-template-columns:repeat(var(--c),5px)}.rk .mini i{width:5px;height:5px}.card.wide .cell.free b{font-size:11px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand">
+      <div class="brandmark"><img src="assets/tile-stamp.png" alt="スタンプカード" onerror="this.parentNode.classList.add('noimg');this.remove()"></div>
+      <div>
+        <h1>スタンプカード</h1>
+        <div class="sub">クラウドハッシュテイル校 TOOLS</div>
+      </div>
+    </div>
+    <span class="badge" id="roleBadge">—</span>
+    <div class="spacer"></div>
+    <a class="iconbtn" href="home.html">🏠 HOME</a>
+    <a class="iconbtn" id="editorLink" href="editor.html" style="display:none">⚙️ 管理</a>
+    <button class="iconbtn" id="themeBtn">🌙</button>
+  </div>
+
+  <div class="hero">
+    <h1 id="ttl">みんなで遊ぼう週間</h1>
+    <span class="per" id="per">—</span><span class="st" id="st">—</span>
+    <div class="prog"><div class="lb" id="progLb">—</div><div class="bar"><i id="progBar" style="width:0"></i></div></div>
+    <img class="mas" id="heroImg" src="assets/mascot.png" alt="" onerror="this.remove()">
+  </div>
+
+  <div class="panel">
+    <div class="phead"><h2 id="cardTitle">🎫 わたしのスタンプカード</h2><span class="sub" id="cardSub">お題をクリアしたら、マスを押してスタンプ！</span></div>
+    <div class="pbody">
+      <div class="viewbar" id="viewbar" style="display:none"></div>
+      <div class="card" id="card"><div class="muted">読み込み中…</div></div>
+    </div>
+  </div>
+
+  <div class="cols2">
+    <div class="panel">
+      <div class="phead"><h2 id="rankTitle">🏅 スタンプランキング</h2><span class="sub">押すと、その人のカードが見られます</span></div>
+      <div class="pbody" id="rank"><div class="muted">読み込み中…</div></div>
+    </div>
+    <div class="panel">
+      <div class="phead"><h2 id="feedTitle">🕒 みんなのさいきんのスタンプ</h2></div>
+      <div class="pbody"><div class="feed" id="feed"><div class="muted">読み込み中…</div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="mod" id="mod"><div class="modc" id="modc"></div></div>
+<canvas class="confetti" id="confetti"></canvas>
+<div id="toast"></div>
+
+<script src="config.js"></script>
+<script src="core.js?v=5.3"></script>
+<script src="home-common.js?v=5.3"></script>
+<script>
+(function(){
+  "use strict";
+  const C = window.LBCore;
+  const $ = id => document.getElementById(id);
+  const session = C.Session.require();
+  if (!session) return;
+  const ctx = window.MCCHome ? window.MCCHome.boot(session) : null;
+  const toast = m => (ctx && ctx.toast ? ctx.toast(m) : alert(m));
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const IS_ADMIN = C.isAdmin(session);
+  const ME = "u_" + session.discord.id;
+  const COLORS = ["#FF8A5B", "#4FA8FF", "#9B7BFF", "#2FC48D", "#FFB627", "#FF6FA8", "#22BFC3", "#6F86FF", "#E0662F", "#7CA455"];
+  const colorOf = k => { let h = 0; String(k).split("").forEach(c => { h = (h * 31 + c.charCodeAt(0)) >>> 0; }); return COLORS[h % COLORS.length]; };
+  const avHtml = (m, cls) => m.avatar
+    ? '<img class="av ' + (cls || "") + '" src="' + esc(m.avatar) + '" alt="" loading="lazy" onerror="this.outerHTML=\'<span class=&quot;avf ' + (cls || "") + '&quot; style=&quot;background:' + colorOf(m.id) + '&quot;>' + esc(String(m.name).slice(0, 1)) + '</span>\'">'
+    : '<span class="avf ' + (cls || "") + '" style="background:' + colorOf(m.id) + '">' + esc(String(m.name || "?").slice(0, 1)) + "</span>";
+  const icHtml = t => t.img ? '<img src="' + esc(t.img) + '" alt="">' : esc(t.icon || "⭐");
+  const md = k => k ? Number(k.slice(5, 7)) + "/" + Number(k.slice(8)) : "";
+  const mdAt = ms => { const d = new Date(ms); return (d.getMonth() + 1) + "/" + d.getDate(); };
+  const ago = ms => { const s = (Date.now() - ms) / 1000; return s < 60 ? "たったいま" : s < 3600 ? Math.floor(s / 60) + "分前" : s < 86400 ? Math.floor(s / 3600) + "時間前" : mdAt(ms); };
+
+  let CFG = null, REC = { users: {} }, MEM = {}, VIEW = ME;
+  const q = new URLSearchParams(location.search).get("id");
+  if (q && /^u_[\w-]+$/.test(q)) VIEW = q;
+
+  const person = id => {
+    const m = MEM[id], u = REC.users[id];
+    if (m) return m;
+    return { id, name: (u && u.name) || "—", avatar: (u && u.avatar) || "" };
+  };
+  const today = () => C.dayKey();
+  const isOpen = () => CFG && CFG.enabled && today() >= CFG.start && today() <= CFG.end;
+  const countOf = u => u ? CFG.tasks.filter(t => u.stamps[t.id]).length : 0;
+
+  async function load(){
+    const safe = p => p.catch(() => null);
+    const [cfg, rec, lp, mem] = await Promise.all([C.loadStampCfg(), C.loadStamps(), safe(C.loadLpData()), safe(C.loadMembers())]);
+    CFG = cfg; REC = rec || { users: {} };
+    const lm = (lp && lp.members) || {}, mm = mem || {};
+    MEM = {};
+    Array.from(new Set(Object.keys(lm).concat(Object.keys(mm)))).forEach(id => {
+      const a = lm[id] || {}, b = mm[id] || {};
+      const name = b.name || a.name;
+      if (name) MEM[id] = { id, name, avatar: (b.discord && b.discord.avatar) || a.avatar || "" };
+    });
+    if (!MEM[ME]) MEM[ME] = { id: ME, name: session.discord.name || session.discord.username || "わたし", avatar: session.discord.avatar || "" };
+    render();
+  }
+
+  function render(){
+    document.title = CFG.title + " スタンプカード ｜ クラウドハッシュテイル校 TOOLS";
+    $("ttl").textContent = CFG.title;
+    const TX = CFG.texts;
+    $("rankTitle").textContent = "🏅 " + TX.rank; $("feedTitle").textContent = "🕒 " + TX.feed;
+    if ($("heroImg")) $("heroImg").src = CFG.images.hero || "assets/mascot.png";
+    $("per").textContent = md(CFG.start) + " 〜 " + md(CFG.end);
+    const t = today();
+    $("st").textContent = !CFG.enabled ? "おやすみ中" : t < CFG.start ? "もうすぐスタート！" : t > CFG.end ? "おわりました" : "開催中！";
+    $("st").classList.toggle("off", !isOpen());
+    const mine = REC.users[VIEW], S = C.stampStatus(CFG, mine ? mine.stamps : {});
+    const who = VIEW === ME ? "" : esc(person(VIEW).name) + " さん　";
+    if (S.bingo){
+      const rc = reachOf(mine).size;
+      $("progLb").innerHTML = who + "<b>" + S.lines + "</b> ライン　" + S.count + " / " + S.total + " マス" +
+        (S.full ? "　🏆 " + esc(TX.full) : S.complete ? "　🎉 " + esc(TX.bingo) : "　あと " + (S.need - S.lines) + " ラインで" + esc(TX.bingo)) +
+        (rc && !S.full ? '<span class="reach">リーチ ×' + rc + "</span>" : "");
+      $("progBar").style.width = Math.min(100, S.count / Math.max(1, S.total) * 100) + "%";
+    } else {
+      const n = S.count, need = S.need;
+      $("progLb").innerHTML = who + "<b>" + n + "</b> / " + need + " マス" +
+        (n >= need ? "　🎉 " + esc(TX.complete) : "　あと " + (need - n) + " マスでコンプリート");
+      $("progBar").style.width = Math.min(100, n / Math.max(1, need) * 100) + "%";
+    }
+    renderCard();
+    renderRank();
+    renderFeed();
+  }
+
+  function renderCard(){
+    const own = VIEW === ME;
+    $("cardTitle").textContent = own ? "🎫 " + CFG.texts.card : "🎫 " + person(VIEW).name + " さんのスタンプカード";
+    $("cardSub").textContent = own ? (isOpen() ? CFG.texts.cardSub : "スタンプを押せるのは " + md(CFG.start) + " 〜 " + md(CFG.end) + " です")
+                                   : "見るだけです" + (IS_ADMIN ? "（管理者はスタンプを消せます）" : "");
+    $("viewbar").style.display = own ? "none" : "";
+    $("viewbar").innerHTML = own ? "" : '<a class="btn ghost" href="stamp.html" style="padding:7px 14px;font-size:12.5px">← わたしのカードにもどる</a>';
+    const u = REC.users[VIEW];
+    const box = $("card");
+    if (!CFG.tasks.length){ box.innerHTML = '<div class="muted">お題がまだありません（管理コンソール →「スタンプ」で作れます）</div>'; return; }
+    // マスの並び（ビンゴで24マスなら真ん中に FREE が入る）
+    const L = C.stampLines(CFG, u ? u.stamps : {}), G = L.grid;
+    const cols = G.cols;
+    box.style.setProperty("--cols", cols); box.classList.toggle("wide", cols >= 4);
+    const bingo = CFG.mode === "bingo";
+    const hit = new Set([].concat(...L.lines)), reach = bingo ? reachOf(u) : new Set();
+    box.innerHTML = G.cells.map((id, i) => {
+      if (id === C.STAMP_FREE)
+        return '<div class="cell free' + (hit.has(i) ? " hit" : "") + '" data-i="' + i + '"><span class="ic">⭐</span><b>FREE</b>' + stampMark({ at: 0 }) + "</div>";
+      const t = CFG.tasks.find(x => x.id === id);
+      const s = u && u.stamps[t.id];
+      const can = own ? (s || isOpen() || IS_ADMIN) : (s && IS_ADMIN);
+      return '<div class="cell' + (s ? " done" : "") + (can ? "" : " locked") + (hit.has(i) ? " hit" : "") + (own && reach.has(i) ? " reach" : "") +
+        '" data-t="' + esc(t.id) + '" data-i="' + i + '">' +
+        '<span class="ic">' + icHtml(t) + "</span><b>" + esc(t.label) + "</b>" + (t.desc ? "<small>" + esc(t.desc) + "</small>" : "") +
+        (s && s.game ? '<span class="game">🎮 ' + esc(s.game) + "</span>" : "") +
+        (s ? stampMark(s) : "") + "</div>";
+    }).join("");
+    if (bingo) drawLines(L.lines);
+    box.querySelectorAll(".cell[data-t]").forEach(el => el.onclick = () => {
+      if (el.classList.contains("locked")) return;
+      const t = CFG.tasks.find(x => x.id === el.dataset.t);
+      const s = u && u.stamps[t.id];
+      if (s) openDone(t, s); else openPress(t);
+    });
+  }
+
+  // リーチのマス（あと1つでそろうラインの、空いているマスの番号）
+  function reachOf(u){
+    const L = C.stampLines(CFG, u ? u.stamps : {}), out = new Set();
+    L.all.forEach(a => { const miss = a.filter(i => !L.has(i)); if (miss.length === 1) out.add(miss[0]); });
+    return out;
+  }
+  // そろったラインに線を引く（newKeys にあるラインはアニメーション）
+  let LAST_LINES = null, NEW_LINES = new Set();
+  function drawLines(lines){
+    const box = $("card");
+    const old = box.querySelector(".bgsvg"); if (old) old.remove();
+    if (!lines.length) return;
+    const ns = "http://www.w3.org/2000/svg", sv = document.createElementNS(ns, "svg");
+    sv.setAttribute("class", "bgsvg"); sv.setAttribute("width", box.clientWidth); sv.setAttribute("height", box.clientHeight);
+    const cells = box.querySelectorAll(".cell");
+    const ctr = i => { const el = cells[i]; return [el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2]; };
+    lines.forEach(a => {
+      const [x1, y1] = ctr(a[0]), [x2, y2] = ctr(a[a.length - 1]);
+      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ex = dx / len * 26, ey = dy / len * 26;
+      const ln = document.createElementNS(ns, "line");
+      ln.setAttribute("x1", x1 - ex); ln.setAttribute("y1", y1 - ey); ln.setAttribute("x2", x2 + ex); ln.setAttribute("y2", y2 + ey);
+      if (NEW_LINES.has(a.join(","))) { ln.setAttribute("class", "new"); ln.style.setProperty("--len", len + 52); }
+      sv.appendChild(ln);
+    });
+    box.appendChild(sv);
+    NEW_LINES = new Set();
+  }
+  let rzT = 0;
+  window.addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => { if (CFG && CFG.mode === "bingo") { const u = REC.users[VIEW]; drawLines(C.stampLines(CFG, u ? u.stamps : {}).lines); } }, 150); });
+  function bingoBanner(sub){
+    const d = document.createElement("div"); d.className = "bingoban";
+    d.innerHTML = "BINGO!" + (sub ? "<small>" + esc(sub) + "</small>" : "");
+    document.body.appendChild(d); setTimeout(() => d.remove(), 2000);
+  }
+  // ハンコ：画像を設定していれば画像、無ければ赤い丸に言葉（管理コンソールで変えられる）
+  // ハンコ：マスコット（assets/stamp.png）／言葉の丸／好きな画像。画像が読めないときは言葉の丸にもどす
+  const textMark = s => '<div class="stampmark"><div><span>' + esc(s.at ? CFG.texts.mark : "FREE") + "</span>" + (s.at ? "<em>" + mdAt(s.at) + "</em>" : "") + "</div></div>";
+  window.stampFallback = im => { const b = im.closest(".stampmark"); if (!b) return;
+    b.className = "stampmark"; b.innerHTML = "<div><span>" + esc(CFG.texts.mark) + "</span>" + (b.dataset.at ? "<em>" + b.dataset.at + "</em>" : "") + "</div>"; };
+  const stampMark = s => {
+    const src = CFG.markStyle === "img" ? CFG.images.stamp : CFG.markStyle === "mascot" ? "assets/stamp.png" : "";
+    if (!src) return textMark(s);
+    const at = s.at ? mdAt(s.at) : "";
+    return '<div class="stampmark img" data-at="' + at + '"><img src="' + esc(src) + '" alt="' + esc(CFG.texts.mark) + '" onerror="stampFallback(this)">' + (at ? "<em>" + at + "</em>" : "") + "</div>";
+  };
+  /* ---- 押す ---- */
+  function openPress(t){
+    const others = Object.values(MEM).filter(m => m.id !== ME).sort((a, b) => a.name.localeCompare(b.name, "ja"));
+    const games = Array.from(new Set([].concat(...Object.values(REC.users).map(u => Object.values(u.stamps).map(s => s.game))).filter(Boolean))).slice(0, 40);
+    const sel = new Set();
+    $("modc").innerHTML = '<h3><span class="ic">' + icHtml(t) + "</span>" + esc(t.label) + "</h3>" +
+      '<div class="ds">' + esc(t.desc || "") + "</div>" +
+      '<label class="lb">🎮 遊んだゲーム（任意）</label><input type="text" id="mGame" maxlength="40" list="gameList" placeholder="例：みんなで遊んだゲームの名前">' +
+      '<datalist id="gameList">' + games.map(g => '<option value="' + esc(g) + '">').join("") + "</datalist>" +
+      '<label class="lb">👥 いっしょに遊んだ人（任意・何人でも）</label><input type="text" id="mQ" placeholder="名前でさがす" style="margin-bottom:6px">' +
+      '<div class="pick" id="mPick"></div>' +
+      '<label class="lb">💬 ひとこと（任意）</label><input type="text" id="mNote" maxlength="80" placeholder="例：最後の1戦がアツかった！">' +
+      '<div class="acts"><button class="btn ghost" id="mCancel">やめる</button><button class="btn" id="mOk">🎫 ' + esc(CFG.texts.press) + "</button></div>";
+    const paint = () => {
+      const qq = ($("mQ").value || "").trim().toLowerCase();
+      $("mPick").innerHTML = others.filter(m => !qq || m.name.toLowerCase().indexOf(qq) >= 0).slice(0, 80).map(m =>
+        '<span class="pk' + (sel.has(m.id) ? " on" : "") + '" data-id="' + esc(m.id) + '">' + avHtml(m) + esc(m.name) + "</span>").join("") || '<span class="muted">見つかりません</span>';
+      $("mPick").querySelectorAll(".pk").forEach(p => p.onclick = () => { const id = p.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); paint(); });
+    };
+    $("mQ").oninput = paint; paint();
+    $("mod").classList.add("on");
+    $("mCancel").onclick = close;
+    $("mOk").onclick = async () => {
+      $("mOk").disabled = true;
+      try {
+        const u0 = REC.users[ME], before = new Set(C.stampLines(CFG, u0 ? u0.stamps : {}).lines.map(a => a.join(",")));
+        const r = await C.pressStamp(CFG, ME, MEM[ME], t.id, { game: $("mGame").value, with: [...sel], note: $("mNote").value });
+        close();
+        REC = await C.loadStamps();
+        const u1 = REC.users[ME];
+        C.stampLines(CFG, u1 ? u1.stamps : {}).lines.forEach(a => { const k = a.join(","); if (!before.has(k)) NEW_LINES.add(k); });
+        render();
+        const el = document.querySelector('.cell[data-t="' + CSS.escape(t.id) + '"] .stampmark');
+        if (el) el.classList.add("drop");
+        const bingo = CFG.mode === "bingo";
+        burst(r.justCompleted || (bingo && r.newLines > 0));
+        if (bingo && r.newLines > 0) setTimeout(() => bingoBanner(r.lines + "ライン" + (r.newLines > 1 ? "（+" + r.newLines + "）" : "")), 350);
+        if (r.justFull) setTimeout(() => openFull(r.count, r.lines), bingo && r.newLines ? 1900 : 0);
+        else if (r.justCompleted) setTimeout(() => openComplete(r.count, r.lines), bingo && r.newLines ? 1900 : 0);
+      } catch(e){ toast(e.message); $("mOk").disabled = false; }
+    };
+  }
+  function openDone(t, s){
+    const own = VIEW === ME;
+    $("modc").innerHTML = '<h3><span class="ic">' + icHtml(t) + "</span>" + esc(t.label) + "</h3>" +
+      '<div class="ds">' + new Date(s.at).toLocaleString("ja-JP") + " にスタンプ</div>" +
+      (s.game ? "<div>🎮 <b>" + esc(s.game) + "</b></div>" : "") +
+      (s.with.length ? '<div style="margin-top:8px">👥 ' + s.with.map(id => esc(person(id).name)).join("・") + "</div>" : "") +
+      (s.note ? '<div style="margin-top:8px">💬 ' + esc(s.note) + "</div>" : "") +
+      '<div class="acts">' + ((own || IS_ADMIN) ? '<button class="btn danger" id="mDel">スタンプを消す</button>' : "") +
+      '<button class="btn ghost" id="mCancel">とじる</button></div>';
+    $("mod").classList.add("on");
+    $("mCancel").onclick = close;
+    if ($("mDel")) $("mDel").onclick = async () => {
+      if (!confirm("「" + t.label + "」のスタンプを消しますか？")) return;
+      try { await C.removeStamp(CFG, VIEW, t.id); close(); await reload(); toast("消しました"); } catch(e){ toast(e.message); }
+    };
+  }
+  function openFull(n, lines){
+    $("modc").innerHTML = '<div class="cpwin"><div style="font-size:54px">🏆</div><div class="big">' + esc(CFG.texts.full) + '</div>' +
+      "<div>「" + esc(CFG.title) + "」の <b>" + n + "マス</b> をぜんぶうめました！" + (CFG.mode === "bingo" ? "（" + lines + "ライン）" : "") + "</div>" +
+      '<div class="muted" style="margin-top:6px">Discord でもお祝いされます</div>' +
+      '<div class="acts" style="justify-content:center"><button class="btn" id="mCancel">やったー！</button></div></div>';
+    $("mod").classList.add("on");
+    $("mCancel").onclick = close;
+    setTimeout(() => burst(true), 400);
+  }
+  function openComplete(n, lines){
+    const bingo = CFG.mode === "bingo";
+    $("modc").innerHTML = '<div class="cpwin"><div style="font-size:54px">🎉</div><div class="big">' + esc(bingo ? CFG.texts.bingo : CFG.texts.complete) + '</div>' +
+      (bingo ? "<div>「" + esc(CFG.title) + "」で <b>" + lines + "ライン</b> そろいました！</div>"
+             : "<div>「" + esc(CFG.title) + "」のスタンプを <b>" + n + "マス</b> 集めました！</div>") +
+      '<div class="muted" style="margin-top:6px">Discord でもお祝いされます' + (CFG.album ? "。卒業証書には「" + esc(CFG.awardName) + "」が付きます" : "") + "</div>" +
+      '<div class="acts" style="justify-content:center"><button class="btn" id="mCancel">やったー！</button></div></div>';
+    $("mod").classList.add("on");
+    $("mCancel").onclick = close;
+    setTimeout(() => burst(true), 400);
+  }
+  const close = () => $("mod").classList.remove("on");
+  $("mod").addEventListener("click", e => { if (e.target === $("mod")) close(); });
+  async function reload(){ REC = await C.loadStamps(); render(); }
+
+  /* ---- ランキング ---- */
+  function renderRank(){
+    const bingo = CFG.mode === "bingo";
+    const list = Object.entries(REC.users).map(([id, u]) => ({ id, u, n: countOf(u), S: C.stampStatus(CFG, u.stamps) })).filter(x => x.n > 0)
+      .sort((a, b) => (bingo ? b.S.lines - a.S.lines : 0) || (b.n - a.n) || ((a.u.completeAt || 9e15) - (b.u.completeAt || 9e15)) || person(a.id).name.localeCompare(person(b.id).name, "ja"));
+    const box = $("rank");
+    if (!list.length){ box.innerHTML = '<div class="muted">まだだれもスタンプを押していません。いちばん乗りしよう！</div>'; return; }
+    box.innerHTML = list.map((x, i) => {
+      const p = person(x.id);
+      return '<div class="rk' + (x.id === ME ? " me" : "") + '" data-id="' + esc(x.id) + '"><span class="no' + (i < 3 ? " m" + (i + 1) : "") + '">' + (i + 1) + "</span>" +
+        avHtml(p) + '<span class="nm">' + esc(p.name) + "</span>" +
+        (x.S.full && bingo ? '<span class="cp">🏆 ' + esc(CFG.texts.full) + "</span>" : x.S.complete ? '<span class="cp">🎫 ' + esc(bingo ? CFG.texts.bingo : "コンプリート") + "</span>" : "") +
+        (bingo ? miniGrid(x.u) : '<span class="dots">' + CFG.tasks.map(t => '<i class="' + (x.u.stamps[t.id] ? "on" : "") + '"></i>').join("") + "</span>") +
+        '<span class="ct">' + (bingo ? x.S.lines + "ライン<small>" + x.n + " / " + x.S.total + "</small>" : x.n + " / " + x.S.need) + "</span></div>";
+    }).join("");
+    box.querySelectorAll(".rk").forEach(el => el.onclick = () => {
+      VIEW = el.dataset.id;
+      history.replaceState(null, "", VIEW === ME ? "stamp.html" : "?id=" + encodeURIComponent(VIEW));
+      render(); window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+  // ランキングの小さなビンゴカード
+  function miniGrid(u){
+    const L = C.stampLines(CFG, u.stamps), hit = new Set([].concat(...L.lines));
+    return '<span class="mini" style="--c:' + L.grid.cols + '">' + L.grid.cells.map((id, i) =>
+      '<i class="' + (id === C.STAMP_FREE ? "fr" : hit.has(i) ? "ln" : u.stamps[id] ? "on" : "") + '"></i>').join("") + "</span>";
+  }
+  /* ---- さいきんのスタンプ ---- */
+  function renderFeed(){
+    const all = [];
+    Object.entries(REC.users).forEach(([id, u]) => Object.entries(u.stamps).forEach(([tid, s]) => {
+      const t = CFG.tasks.find(x => x.id === tid); if (t) all.push({ id, t, s });
+    }));
+    all.sort((a, b) => b.s.at - a.s.at);
+    $("feed").innerHTML = all.slice(0, 12).map(x => {
+      const p = person(x.id);
+      return '<div class="fd">' + avHtml(p) + '<div class="tx"><b>' + esc(p.name) + "</b> が「" + icHtml(x.t).replace('<img ', '<img style="width:16px;height:16px;border-radius:50%;vertical-align:-3px" ') + " " + esc(x.t.label) + "」をクリア" +
+        "<small>" + ago(x.s.at) + (x.s.game ? "・🎮 " + esc(x.s.game) : "") + (x.s.with.length ? "・👥 " + x.s.with.map(id => esc(person(id).name)).join("・") : "") + "</small></div></div>";
+    }).join("") || '<div class="muted">まだありません</div>';
+  }
+
+  function burst(big){
+    const cv = $("confetti"), g = cv.getContext("2d");
+    cv.width = innerWidth; cv.height = innerHeight;
+    const P = Array.from({ length: big ? 170 : 60 }, () => ({ x: innerWidth / 2 + (Math.random() - .5) * 220, y: innerHeight * .38, vx: (Math.random() - .5) * 14, vy: -Math.random() * 14 - 4,
+      w: 6 + Math.random() * 6, h: 3 + Math.random() * 4, r: Math.random() * 6, vr: (Math.random() - .5) * .4, c: COLORS[(Math.random() * COLORS.length) | 0] }));
+    const t0 = performance.now();
+    const step = now => {
+      g.clearRect(0, 0, cv.width, cv.height);
+      P.forEach(p => { p.vy += .35; p.x += p.vx; p.y += p.vy; p.r += p.vr; g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; g.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); g.restore(); });
+      if (now - t0 < 2600) requestAnimationFrame(step); else g.clearRect(0, 0, cv.width, cv.height);
+    };
+    requestAnimationFrame(step);
+  }
+
+  /* 管理コンソールの右のプレビューで開かれたとき：保存前の設定が届いたら、その内容で描き直す（管理者だけ・保存はしない） */
+  if (IS_ADMIN && window.parent !== window){
+    window.addEventListener("message", ev => {
+      if (ev.origin !== location.origin || !ev.data || ev.data.type !== "stamp-draft" || !CFG) return;
+      CFG = C.normStampCfg(ev.data.cfg); render();
+    });
+  }
+  load().then(() => {
+    if (IS_ADMIN && window.parent !== window) try { parent.postMessage({ type: "stamp-ready" }, location.origin === "null" ? "*" : location.origin); } catch(x){}
+  }).catch(e => { $("card").innerHTML = '<div class="muted">読み込めませんでした：' + esc(e.message) + "</div>"; });
+})();
+</script>
+</body>
+</html>
