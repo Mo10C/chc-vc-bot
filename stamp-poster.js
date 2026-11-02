@@ -26,6 +26,7 @@ const { Canvas, enc, channelFor, fsGet, fsReady, DUMMY_NOTE, liveAvatars, setupF
 const LATE_MS = 3 * 24 * 60 * 60 * 1000;
 const DEFAULT_TEXT = "🎉 **{name}** さんが「{title}」で **ビンゴ**しました！\nおめでとうございます！ まだの人も、いっしょに遊ぼう 🎮";
 const OLD_TEXT = "🎉 **{name}** さんが「{title}」で **ビンゴ！**（{lines}ライン・{count}マス）\nおめでとうございます！ まだの人も、いっしょに遊ぼう 🎮";
+const OLD_TEXTS = [OLD_TEXT, "🎉 **{name}** さんが「{title}」のスタンプカードを **コンプリート**！（{count} / {total}マス）\nおめでとうございます！ まだの人も、いっしょに遊ぼう 🎮"];   // 前の既定の文面（新しい文面に置きかえる）
 const DEFAULT_FULL = "🏆 **{name}** さんが「{title}」のカードを **ぜんぶうめました**！\nすごい！ おめでとうございます 🎊";
 const OLD_FULL = "🏆 **{name}** さんが「{title}」のカードを **ぜんぶうめました**！（{count}マス・{lines}ライン）\nすごい！ おめでとうございます 🎊";
 
@@ -71,7 +72,7 @@ function textFor(cfg, id, u, kind) {
   const count = tasks.filter(t => u.stamps && u.stamps[t.id]).length;
   const discordId = /^u_\d+$/.test(id) ? id.slice(2) : "";
   const pf = cfg.post && cfg.post.full;
-  const tx = kind === "full" ? ((pf && pf !== OLD_FULL) ? pf : DEFAULT_FULL) : (((cfg.post && cfg.post.complete) && cfg.post.complete !== OLD_TEXT) ? cfg.post.complete : DEFAULT_TEXT);
+  const tx = kind === "full" ? ((pf && pf !== OLD_FULL) ? pf : DEFAULT_FULL) : (((cfg.post && cfg.post.complete) && !OLD_TEXTS.includes(cfg.post.complete)) ? cfg.post.complete : DEFAULT_TEXT);
   return fill(tx, {
     name: u.name || "—", mention: discordId ? "<@" + discordId + ">" : (u.name || "—"),
     count, total: need, lines: linesOf(cfg, u.stamps), title: cfg.title || "スタンプカード" });
