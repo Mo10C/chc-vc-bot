@@ -27,7 +27,16 @@
      VC_MIN_SEC           これより短い滞在は捨てる（既定: 10秒）
      VC_PUSH_MIN          Firestore へ送る間隔・分（既定: 5）
      VC_RESEND_ALL        1 にすると、起動時に生ログの全日ぶんを Firestore へ送り直す
-                          （古い版から更新したとき、過去の日の「同時にいた時間」を埋めるために1回だけ使う）
+                          （数え方を直した版に更新したとき、過去の日も新しい数え方にするために1回だけ使う）
+     VC_COUNT_AFK         1 にすると、サーバーの「AFKチャンネル」も数える（既定：数えない）
+     VC_MAX_SESSION_H     1回の滞在の上限（時間）。これより長い滞在は、この時間で切る（既定 0＝切らない）
+
+   ★ 数え方（v3）
+     ・1人は同時に1つのVCにしかいられないので、同じ人の滞在が重なっていたら、重なったぶんは数えない
+       （退室の通知を取りこぼすと、前のVCに「いたまま」になって時間が二重に増えていたため）
+     ・1分ごとに「いま本当にVCにいる人」とつき合わせ、いない人の滞在は最後に確認できた時刻で閉じる
+     ・AFKチャンネルは数えない
+     ・日ごとの「VC稼働（誰か1人でもいた実時間）」を ups に入れる（VCをまたいで重なった時間は1回分）
    ============================================================= */
 "use strict";
 
@@ -43,6 +52,9 @@ const SAVE_MS  = 60 * 1000;
 const JST      = 9 * 60 * 60 * 1000;
 
 let store = { version: 2, startedAt: 0, sessions: [] };
+const COUNT_AFK = process.env.VC_COUNT_AFK === "1";
+const MAX_SESSION_MS = Math.max(0, Number(process.env.VC_MAX_SESSION_H || 0)) * 3600 * 1000;
+const afkIds = new Set();           // サーバーのAFKチャンネル（数えない）
 const openMap = new Map();          // `${userId}:${channelId}` → セッション
 const dirtyDays = new Set();        // Firestore に送り直す必要がある日
 let dirty = false;
@@ -81,7 +93,8 @@ function load() {
 function save() {
   try {
     const now = Date.now();
-    const open = [...openMap.values()].map(o => Object.assign({}, o, { seen: now }));
+    // seen＝最後に「本当にそのVCにいる」と確認できた時刻（落ちたときは、ここで閉じる）
+    const open = [...openMap.values()].map(o => Object.assign({}, o, { seen: o.seen || now }));
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(TMP, JSON.stringify({ version: 2, startedAt: store.startedAt, sessions: store.sessions, open }));
     fs.renameSync(TMP, FILE);
@@ -103,12 +116,15 @@ function openSession(member, channel, at) {
   if (!member || !channel || member.user.bot) return;
   const k = keyOf(member.id, channel.id);
   if (openMap.has(k)) return;
+  // 1人は同時に1つのVCにしかいられない：ほかのVCの滞在が残っていたら、ここで閉じる（退室の取りこぼし対策）
+  [...openMap.values()].filter(o => o.u === member.id && o.c !== channel.id).forEach(o => closeSession(o.u, o.c, at || Date.now()));
   openMap.set(k, {
     u: member.id,
     n: member.displayName || member.user.username,
     c: channel.id,
     cn: channel.name || "(不明なVC)",
-    s: at || Date.now()
+    s: at || Date.now(),
+    seen: at || Date.now()
   });
   dirty = true;
 }
@@ -121,6 +137,33 @@ function closeSession(userId, channelId, at) {
   if (e - o.s >= MIN_SEC * 1000) push({ u: o.u, n: o.n, c: o.c, cn: o.cn, s: o.s, e: e });
 }
 function closeAll(at) { [...openMap.values()].forEach(o => closeSession(o.u, o.c, at)); }
+
+/* 1分ごとに「いま本当にVCにいる人」とつき合わせる。
+   ・記録上は入室中なのに、もうそのVCにいない人 → 最後に確認できた時刻（seen）で閉じる
+   ・VCにいるのに記録が無い人 → いまから記録を始める */
+function reconcile(client) {
+  const now = Date.now(), actual = new Map();   // userId → { member, channel }
+  for (const guild of client.guilds.cache.values()) {
+    if (guild.afkChannelId) afkIds.add(guild.afkChannelId);
+    for (const vs of guild.voiceStates.cache.values()) {
+      if (!vs.channelId) continue;
+      const member = vs.member || guild.members.cache.get(vs.id) || null;
+      if (member && member.user.bot) continue;
+      // メンバー情報が手元に無くても「その人がそのVCにいる」ことは分かるので、記録は閉じない（新しく始めるときだけメンバーが要る）
+      actual.set(vs.id, { member, channel: vs.channel || guild.channels.cache.get(vs.channelId) || { id: vs.channelId } });
+    }
+  }
+  let closed = 0, opened = 0;
+  [...openMap.values()].forEach(o => {
+    const a = actual.get(o.u);
+    if (a && a.channel.id === o.c) { o.seen = now; return; }
+    closeSession(o.u, o.c, o.seen || o.s); closed++;
+  });
+  actual.forEach(({ member, channel }, uid) => {
+    if (member && channel.name !== undefined && !openMap.has(keyOf(uid, channel.id))) { openSession(member, channel, now); opened++; }
+  });
+  if (closed || opened) { dirty = true; console.log("[vc] つき合わせ：閉じた " + closed + "件 / 始めた " + opened + "件"); }
+}
 
 /* =============================================================
    日次集計
@@ -150,29 +193,46 @@ function unionSec(ranges) {
   return Math.round((total + curB - curA) / 1000);
 }
 /* その日のぶんを組み立てる。いま入室中のぶんも「今まで」で含める。
-   { ch: { <VCのID>: { n:VC名, up:稼働秒, sec:延べ秒, u:{ <ユーザーID>: 秒 } } } } */
+   { ch: { <VCのID>: { n:VC名, up:稼働秒, sec:延べ秒, u:{ <ユーザーID>: 秒 } } }, up: その日のVC稼働（全VCで誰か1人でもいた実時間） } */
 function rollupDay(day) {
   const now = Date.now();
   const live = [...openMap.values()].map(o => ({ u: o.u, n: o.n, c: o.c, cn: o.cn, s: o.s, e: now }));
-  const ch = {};
-  const names = {};
-  const ranges = {};
-  const bySlice = {};   // VCごとの {u, a, b}（同時にいた時間を出すため）
-  store.sessions.concat(live).forEach(s => {
+  const names = {}, chName = {};
+  // 1) その日の切れはし（AFKはのぞく・長すぎる滞在は上限で切る）
+  const byUser = {};
+  store.sessions.concat(live).forEach(s0 => {
+    if (!COUNT_AFK && afkIds.has(s0.c)) return;
+    const s = MAX_SESSION_MS && s0.e - s0.s > MAX_SESSION_MS ? Object.assign({}, s0, { e: s0.s + MAX_SESSION_MS }) : s0;
     daySlices(s).forEach(x => {
-      if (x.day !== day) return;
-      const sec = Math.round((x.b - x.a) / 1000);
-      if (sec <= 0) return;
-      if (!ch[s.c]) { ch[s.c] = { n: s.cn, up: 0, sec: 0, u: {} }; ranges[s.c] = []; }
-      ch[s.c].n = s.cn;
-      ch[s.c].sec += sec;
-      ch[s.c].u[s.u] = (ch[s.c].u[s.u] || 0) + sec;
-      ranges[s.c].push({ a: x.a, b: x.b });
-      (bySlice[s.c] || (bySlice[s.c] = [])).push({ u: s.u, a: x.a, b: x.b });
-      names[s.u] = s.n;
+      if (x.day !== day || x.b <= x.a) return;
+      (byUser[s.u] || (byUser[s.u] = [])).push({ u: s.u, c: s.c, a: x.a, b: x.b });
+      names[s.u] = s.n; chName[s.c] = s.cn;
     });
   });
+  /* 2) 同じ人の滞在が重なっていたら、あとから始まったほうを正しいとして、前の滞在をそこで切る
+        （1人は同時に1つのVCにしかいられない。前のVCの退室を取りこぼして「いたまま」になっていた分を消す） */
+  const slices = [];
+  Object.values(byUser).forEach(list => {
+    list.sort((p, q) => p.a - q.a || p.b - q.b);
+    list.forEach((x, i) => {
+      const nx = list[i + 1], b = nx ? Math.min(x.b, nx.a) : x.b;
+      if (b > x.a) slices.push({ u: x.u, c: x.c, a: x.a, b });
+    });
+  });
+  // 3) VCごと・人ごとに足す
+  const ch = {}, ranges = {}, bySlice = {}, all = [];
+  slices.forEach(x => {
+    const sec = Math.round((x.b - x.a) / 1000);
+    if (sec <= 0) return;
+    if (!ch[x.c]) { ch[x.c] = { n: chName[x.c], up: 0, sec: 0, u: {} }; ranges[x.c] = []; }
+    ch[x.c].sec += sec;
+    ch[x.c].u[x.u] = (ch[x.c].u[x.u] || 0) + sec;
+    ranges[x.c].push({ a: x.a, b: x.b });
+    all.push({ a: x.a, b: x.b });
+    (bySlice[x.c] || (bySlice[x.c] = [])).push(x);
+  });
   Object.keys(ch).forEach(id => ch[id].up = unionSec(ranges[id]));
+  const up = unionSec(all);
 
   /* 同じVCに同時にいた時間（2人の組ごと）。卒業アルバムの「いっしょに過ごした仲間」に使う。
      キーは "<小さいID>_<大きいID>"。1分未満は記録しない。 */
@@ -192,7 +252,7 @@ function rollupDay(day) {
     pairs[k] = Math.round(pairs[k] / 1000);
     if (pairs[k] < 60) delete pairs[k];
   });
-  return { ch, names, pairs };
+  return { ch, names, pairs, up };
 }
 
 /* =============================================================
@@ -238,16 +298,17 @@ async function pushToFirestore(days) {
   list.forEach(d => (byMonth[monthKey(d)] = byMonth[monthKey(d)] || []).push(d));
 
   for (const [m, ds] of Object.entries(byMonth)) {
-    const obj = { days: {}, pairs: {}, names: {}, updatedAt: Date.now() };
+    const obj = { days: {}, pairs: {}, ups: {}, names: {}, updatedAt: Date.now() };
     const mask = ["updatedAt", "names"];
     ds.forEach(d => {
       const r = rollupDay(d);
       obj.days[d] = r.ch;
       obj.pairs[d] = r.pairs;
+      obj.ups[d] = r.up;
       Object.assign(obj.names, r.names);
       /* ★ 日付キーは「-」を含むので、Firestore のフィールドパスではバッククォートで囲む必要がある。
            囲まないと updateMask が不正になり、書き込みが失敗する。 */
-      mask.push("days.`" + d + "`", "pairs.`" + d + "`");
+      mask.push("days.`" + d + "`", "pairs.`" + d + "`", "ups.`" + d + "`");
     });
     // 月の名前表は、その月に出てくる人を毎回まとめて入れ直す
     try {
@@ -277,13 +338,14 @@ function startVcTracker(client) {
     if (started) return; started = true;    // ready と clientReady の両方が来ても1回だけ
     for (const guild of client.guilds.cache.values()) {
       try { await guild.channels.fetch(); } catch (e) { }
+      if (guild.afkChannelId) afkIds.add(guild.afkChannelId);
       for (const vs of guild.voiceStates.cache.values()) {
         if (!vs.channelId) continue;
         const ch = vs.channel || guild.channels.cache.get(vs.channelId);
         if (vs.member && ch) openSession(vs.member, ch);
       }
     }
-    console.log("[vc] 計測開始。いまVCにいる人: " + openMap.size + "人");
+    console.log("[vc] 計測開始。いまVCにいる人: " + openMap.size + "人" + (afkIds.size && !COUNT_AFK ? "（AFKチャンネルは数えません）" : ""));
     save();
     // 落ちていた間の取りこぼしを直すため、直近3日を送り直す
     const t = Date.now();
@@ -310,7 +372,10 @@ function startVcTracker(client) {
     }
   });
 
-  const t1 = setInterval(() => { if (dirty || openMap.size) save(); }, SAVE_MS);
+  // 接続が切れて戻ったときは、その間の入退室を取りこぼしているかもしれないので、すぐつき合わせる
+  client.on("shardResume", () => { if (started) reconcile(client); });
+  client.on("shardReady", () => { if (started) reconcile(client); });
+  const t1 = setInterval(() => { if (started) reconcile(client); if (dirty || openMap.size) save(); }, SAVE_MS);
   const t2 = setInterval(() => {
     // 入室中の人がいる日は、途中経過も送っておく（画面がリアルタイムに近くなる）
     const today = dayKey(Date.now());

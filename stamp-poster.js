@@ -80,6 +80,25 @@ function textFor(cfg, id, u, kind) {
 
 /* ---------------- お祝い画像（1200×675・ランクアップと同じ雰囲気） ---------------- */
 function rng(seed) { let x = 0; for (const ch of String(seed)) x = (x * 31 + ch.charCodeAt(0)) >>> 0; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296); }
+// ハンコの画像：Bot の assets/stamp.png → サイトの assets/stamp.png → どちらも無ければ赤い丸のハンコをその場で描く
+let STAMP_CACHE = null;
+async function stampImage() {
+  if (STAMP_CACHE) return STAMP_CACHE;
+  let im = await loadImg("assets/stamp.png");
+  if (!im && process.env.SITE_URL) im = await loadImg("assets/stamp.png", process.env.SITE_URL);
+  if (!im) {
+    setupFonts();
+    const S = 400, c = Canvas.createCanvas(S, S), g = c.getContext("2d"), RED = "#E0384D";
+    g.strokeStyle = RED; g.fillStyle = RED;
+    g.lineWidth = 26; g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 20, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = 8; g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 52, 0, Math.PI * 2); g.stroke();
+    rr(g, 34, S / 2 - 46, S - 68, 92, 18); g.fill();
+    g.fillStyle = "#FFFFFF"; g.font = "900 64px JPB"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("あそんだ！", S / 2, S / 2 + 2);
+    im = await Canvas.loadImage(await c.encode("png"));
+    console.warn("[stamp] assets/stamp.png が見つからないので、赤い丸のハンコで代わりに描きます（chc-vc-bot/assets/stamp.png を置いてください）");
+  }
+  return (STAMP_CACHE = im);
+}
 async function renderStamp(cfg, id, u, kind, avatarUrl) {
   setupFonts();
   const W = 1200, H = 675, cv = Canvas.createCanvas(W, H), g = cv.getContext("2d"), R = rng(id + kind);
@@ -119,7 +138,7 @@ async function renderStamp(cfg, id, u, kind, avatarUrl) {
   if (im) g.drawImage(im, cx - r, cy - r, r * 2, r * 2);
   else { g.fillStyle = LEAF; g.fillRect(cx - r, cy - r, r * 2, r * 2); g.fillStyle = "#fff"; g.font = "900 130px JPB"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(clean(u.name).slice(0, 1), cx, cy + 6); }
   g.restore();
-  const stampIm = await loadImg("assets/stamp.png");
+  const stampIm = await stampImage();
   if (stampIm) {
     g.save(); g.translate(cx + 112, cy + 110); g.rotate(-0.25);
     g.beginPath(); g.arc(0, 0, 76, 0, Math.PI * 2); g.fillStyle = "#FFFFFF"; g.shadowColor = "rgba(46,74,23,.3)"; g.shadowBlur = 14; g.fill(); g.shadowBlur = 0;
